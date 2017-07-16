@@ -16,12 +16,12 @@ class Postgres(panoply.DataSource):
         tables = self.source.get('tables', [])
         self.tables = tables[:]
         self.index = 0
-        self.total = len(tables)
         self.conn = None
         self.cursor = None
 
     def read(self, n=None):
-        if self.index >= self.total:
+        total = len(self.tables)
+        if self.index >= total:
             return None  # no tables left, we're done
 
         table = self.tables[self.index]
@@ -29,13 +29,13 @@ class Postgres(panoply.DataSource):
             table = table[:-7]
 
         msg = 'Reading table {} ({}) out of {}'\
-              .format(self.index + 1, table, self.total)
-        self.progress(self.index + 1, self.total, msg)
+              .format(self.index + 1, table, total)
+        self.progress(self.index + 1, total, msg)
 
         # if there is no cursor (starting a new table read), create it
         if not self.cursor:
             self.conn, self.cursor = connect(self.source)
-            q = get_query(self.source)
+            q = get_query(table, self.source)
             self.cursor.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read BATCH_SIZE records from the table
@@ -99,7 +99,7 @@ def connect(source):
 
     return conn, cur
 
-def get_query(src):
+def get_query(table, src):
     '''return a SELECT query using properties from the source'''
     where = ''
     if src.get('inckey') and src.get('incval'):
