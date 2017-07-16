@@ -55,11 +55,14 @@ class Postgres(panoply.DataSource):
 
     def close(self):
         '''close the connection, and clear everything'''
-        self.conn.rollback()
-        self.cursor.close()
-        self.conn.close()
-        self.cursor = None
+        if self.cursor:
+            self.cursor.close()
+        if self.conn:
+            self.conn.rollback()
+            self.conn.close()
+
         self.conn = None
+        self.cursor = None
 
     def get_tables(self):
         '''get the list of tables from the source'''
