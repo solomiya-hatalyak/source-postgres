@@ -41,7 +41,6 @@ class TestPostgres(unittest.TestCase):
         for x in range(0, len(tables)):
             self.assertEqual(tables[x], mock_tables[x]["name"])
 
-
     # read a table from the database
     @mock.patch("psycopg2.connect")
     def test_read(self, m):

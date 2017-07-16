@@ -36,7 +36,7 @@ CONFIG = {
             'title': 'Tables',
             'required': True,
             'type': 'list',
-            'values': lambda *args, **kwargs: Stream(*args, **kwargs).get_tables(),
+            'values': lambda s, o: Stream(s, o).get_tables(),
             'dependencies': ['username', 'password'],
             'help': 'Select which tables you\'d like to import'
         }

@@ -42,7 +42,8 @@ class Postgres(panoply.DataSource):
         self.cursor.execute('FETCH FORWARD {} FROM cur'.format(BATCH_SIZE))
         result = self.cursor.fetchall()
 
-        # add __tablename to each row, so it would be available as `destination`
+        # add __tablename to each row, so it would be available as
+        # `destination`
         tablename = table.lower().replace(".", "_")
         result = [dict(r, __tablename=tablename) for r in result]
 
@@ -102,6 +103,7 @@ def connect(source):
 
     return conn, cur
 
+
 def get_query(table, src):
     '''return a SELECT query using properties from the source'''
     where = ''
@@ -109,6 +111,7 @@ def get_query(table, src):
         where = ' WHERE {} > {}'.format(src['inckey'], src['incval'])
 
     return 'SELECT * FROM {}{}'.format(table, where)
+
 
 def format_table_name(row):
     '''format the table name (add schema and type if applicable)'''
