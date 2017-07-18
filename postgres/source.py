@@ -19,14 +19,12 @@ class Postgres(panoply.DataSource):
         self.conn = None
         self.cursor = None
 
-    def read(self, n=None):
+    def read(self, n=BATCH_SIZE):
         total = len(self.tables)
         if self.index >= total:
             return None  # no tables left, we're done
 
-        table = self.tables[self.index]
-        if table.endswith('(VIEW)'):
-            table = table[:-7]
+        table = self.tables[self.index]['value']
 
         msg = 'Reading table {} ({}) out of {}'\
               .format(self.index + 1, table, total)
@@ -34,17 +32,17 @@ class Postgres(panoply.DataSource):
 
         # if there is no cursor (starting a new table read), create it
         if not self.cursor:
-            self.conn, self.cursor = connect(self.source)
+            self.conn, self.cursor = connect(self.source, self.log)
             q = get_query(table, self.source)
             self.cursor.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
-        # read BATCH_SIZE records from the table
-        self.cursor.execute('FETCH FORWARD {} FROM cur'.format(BATCH_SIZE))
+        # read n(=BATCH_SIZE) records from the table
+        self.cursor.execute('FETCH FORWARD {} FROM cur'.format(n))
         result = self.cursor.fetchall()
 
         # add __tablename to each row, so it would be available as
         # `destination`
-        tablename = table.lower().replace(".", "_")
+        tablename = table.lower()
         result = [dict(r, __tablename=tablename) for r in result]
 
         # no more rows for this table, clear and proceed to next table
@@ -59,6 +57,9 @@ class Postgres(panoply.DataSource):
         if self.cursor:
             self.cursor.close()
         if self.conn:
+            # psycopg2 uses transactions for everything, hence we use rollback
+            # to cleanly exit the transaction although conn.close should do it
+            # implicitly
             self.conn.rollback()
             self.conn.close()
 
@@ -72,7 +73,7 @@ class Postgres(panoply.DataSource):
             WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
         '''
 
-        self.conn, self.cursor = connect(self.source)
+        self.conn, self.cursor = connect(self.source, self.log)
         self.cursor.execute(query)
         result = map(format_table_name, self.cursor.fetchall())
 
@@ -81,23 +82,24 @@ class Postgres(panoply.DataSource):
         return result
 
 
-def connect(source):
+def connect(source, log):
     '''connect to the DB using properties from the source'''
-    host, dbname = source['address'].rsplit('/', 1)
+    host, dbname = source['addr'].rsplit('/', 1)
     if ':' in host:
         host, port = host.rsplit(':', 1)
 
     try:
         conn = psycopg2.connect(
             host=host,
-            user=source['username'],
+            user=source['user'],
             password=source['password'],
             dbname=dbname
         )
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    except psycopg2.OperationalError:
+    except psycopg2.OperationalError, e:
+        log(e)
         raise panoply.PanoplyException(
-            "Login failed for user: {}".format(source['username']),
+            "Login failed for user: {}".format(source['user']),
             retryable=False
         )
 
@@ -122,4 +124,4 @@ def format_table_name(row):
     if row['table_type'] == 'VIEW':
         name += ' (VIEW)'
 
-    return name
+    return {'name': name, 'value': row['table_name']}

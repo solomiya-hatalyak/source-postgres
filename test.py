@@ -10,8 +10,8 @@ OPTIONS = {
 class TestPostgres(unittest.TestCase):
     def setUp(self):
         self.source = {
-            "address": "test.database.name/foobar",
-            "username": "test",
+            "addr": "test.database.name/foobar",
+            "user": "test",
             "password": "testpassword"
         }
 
@@ -39,7 +39,7 @@ class TestPostgres(unittest.TestCase):
         tables = inst.get_tables()
         self.assertEqual(len(tables), len(mock_tables))
         for x in range(0, len(tables)):
-            self.assertEqual(tables[x], mock_tables[x]["name"])
+            self.assertEqual(tables[x]['name'], mock_tables[x]["name"])
 
     # read a table from the database
     @mock.patch("psycopg2.connect")
@@ -54,7 +54,7 @@ class TestPostgres(unittest.TestCase):
         ]
 
         inst = Postgres(self.source, OPTIONS)
-        inst.tables = ['foo.bar']
+        inst.tables = [{'value': 'foo_bar'}]
         m.return_value.cursor.return_value.fetchall.return_value = mock_recs
 
         rows = inst.read()
