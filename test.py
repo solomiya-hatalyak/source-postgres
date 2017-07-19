@@ -12,7 +12,9 @@ class TestPostgres(unittest.TestCase):
         self.source = {
             "addr": "test.database.name/foobar",
             "user": "test",
-            "password": "testpassword"
+            "password": "testpassword",
+            "inckey": "inckey",
+            "incval": "incval"
         }
 
     def tearDown(self):
@@ -62,6 +64,15 @@ class TestPostgres(unittest.TestCase):
         for x in range(0, len(rows)):
             self.assertEqual(rows[x]['__tablename'], 'foo_bar')
 
+    @mock.patch("psycopg2.connect")
+    def test_incremental(self, m):
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = [{'value': 'foo'}]
+        inst.read()
+
+        q = 'DECLARE cur CURSOR FOR SELECT * FROM foo WHERE inckey > incval'
+        execute_mock = m.return_value.cursor.return_value.execute
+        execute_mock.assert_has_calls([mock.call(q)], True)
 
 if __name__ == "__main__":
     unittest.main()
