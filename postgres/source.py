@@ -34,10 +34,10 @@ class Postgres(panoply.DataSource):
         if not self.cursor:
             self.conn, self.cursor = connect(self.source, self.log)
             q = get_query(table, self.source)
-            self.cursor.execute('DECLARE cur CURSOR FOR {}'.format(q))
+            self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
-        self.cursor.execute('FETCH FORWARD {} FROM cur'.format(n))
+        self.execute('FETCH FORWARD {} FROM cur'.format(n))
         result = self.cursor.fetchall()
 
         # add __tablename to each row, so it would be available as
@@ -51,6 +51,10 @@ class Postgres(panoply.DataSource):
             self.index += 1
 
         return result
+
+    def execute(self, query):
+        self.log(query)
+        self.cursor.execute(query)
 
     def close(self):
         '''close the connection, and clear everything'''
@@ -74,7 +78,7 @@ class Postgres(panoply.DataSource):
         '''
 
         self.conn, self.cursor = connect(self.source, self.log)
-        self.cursor.execute(query)
+        self.execute(query)
         result = map(format_table_name, self.cursor.fetchall())
 
         self.close()
