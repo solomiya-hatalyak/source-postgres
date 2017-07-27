@@ -24,7 +24,7 @@ class Postgres(panoply.DataSource):
         if self.index >= total:
             return None  # no tables left, we're done
 
-        table = self.tables[self.index]['value']
+        schema, table = self.tables[self.index]['value'].split('.', 1)
 
         msg = 'Reading table {} ({}) out of {}'\
               .format(self.index + 1, table, total)
@@ -33,17 +33,18 @@ class Postgres(panoply.DataSource):
         # if there is no cursor (starting a new table read), create it
         if not self.cursor:
             self.conn, self.cursor = connect(self.source, self.log)
-            q = get_query(table, self.source)
+            q = get_query(schema, table, self.source)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
         self.execute('FETCH FORWARD {} FROM cur'.format(n))
         result = self.cursor.fetchall()
 
-        # add __tablename to each row, so it would be available as
-        # `destination`
-        tablename = table.lower()
-        result = [dict(r, __tablename=tablename) for r in result]
+        # add __schemaname and __tablename to each row, so it would be available
+        # as `destination`
+        t = table.lower()
+        s = schema.lower()
+        result = [dict(r, __tablename=t, __schemaname=s) for r in result]
 
         # no more rows for this table, clear and proceed to next table
         if not result:
@@ -89,12 +90,15 @@ class Postgres(panoply.DataSource):
 def connect(source, log):
     '''connect to the DB using properties from the source'''
     host, dbname = source['addr'].rsplit('/', 1)
+    port = 5432
     if ':' in host:
         host, port = host.rsplit(':', 1)
+        port = int(port) #pyscopg expects port to be numeric
 
     try:
         conn = psycopg2.connect(
             host=host,
+            port=port,
             user=source['user'],
             password=source['password'],
             dbname=dbname
@@ -110,22 +114,25 @@ def connect(source, log):
     return conn, cur
 
 
-def get_query(table, src):
+def get_query(schema, table, src):
     '''return a SELECT query using properties from the source'''
     where = ''
     if src.get('inckey') and src.get('incval'):
         where = ' WHERE {} > {}'.format(src['inckey'], src['incval'])
 
-    return 'SELECT * FROM {}{}'.format(table, where)
+    return 'SELECT * FROM "{}"."{}"{}'.format(schema, table, where)
 
 
 def format_table_name(row):
-    '''format the table name (add schema and type if applicable)'''
-    name = row['table_name']
-    if row['table_schema'] != 'public':
-        name = row['table_schema'] + '.' + name
+    '''format the table name with schema (and type if applicable)'''
 
+    # value should include the schema of the tables as there might be tables
+    # with the same name in different schemas
+    value = "%s.%s" % (row['table_schema'], row['table_name'])
+
+    # For display purposes name will indicate if this is a view or not,
+    name = value
     if row['table_type'] == 'VIEW':
         name += ' (VIEW)'
 
-    return {'name': name, 'value': row['table_name']}
+    return {'name': name, 'value': value}
