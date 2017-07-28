@@ -40,8 +40,8 @@ class Postgres(panoply.DataSource):
         self.execute('FETCH FORWARD {} FROM cur'.format(n))
         result = self.cursor.fetchall()
 
-        # add __schemaname and __tablename to each row, so it would be available
-        # as `destination`
+        # add __schemaname and __tablename to each row so it would be available
+        # as `destination` if needed
         t = table.lower()
         s = schema.lower()
         result = [dict(r, __tablename=t, __schemaname=s) for r in result]
@@ -93,7 +93,7 @@ def connect(source, log):
     port = 5432
     if ':' in host:
         host, port = host.rsplit(':', 1)
-        port = int(port) #pyscopg expects port to be numeric
+        port = int(port)  # pyscopg expects port to be numeric
 
     try:
         conn = psycopg2.connect(

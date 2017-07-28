@@ -82,7 +82,8 @@ class TestPostgres(unittest.TestCase):
         inst.tables = [{'value': 'schema.foo'}]
         inst.read()
 
-        q = '''DECLARE cur CURSOR FOR SELECT * FROM "schema"."foo" WHERE inckey > incval'''
+        q = ('DECLARE cur CURSOR FOR '
+             'SELECT * FROM "schema"."foo" WHERE inckey > incval')
         execute_mock = m.return_value.cursor.return_value.execute
         execute_mock.assert_has_calls([mock.call(q)], True)
 
