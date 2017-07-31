@@ -30,8 +30,8 @@ class TestPostgres(unittest.TestCase):
         # Notice 'name' here is only for validation of expected result.
         # It is not a field that returns in the actual query results
         mock_tables = [
-            {'table_schema': 'dbo', 'table_name': 'testnoUnique',
-             'table_type': 'BASE TABLE', 'name': 'dbo.testnoUnique'},
+            {'table_schema': 'dbo', 'table_name': 'testNoUnique',
+             'table_type': 'BASE TABLE', 'name': 'dbo.testNoUnique'},
             {'table_schema': 'dbo', 'table_name': 'testNoIndex',
              'table_type': 'BASE TABLE', 'name': 'dbo.testNoIndex'},
             {'table_schema': 'SalesLT', 'table_name': 'Customer',
@@ -152,6 +152,32 @@ class TestPostgres(unittest.TestCase):
             password=source['password'],
             dbname="foobar"
         )
+
+    # Make sure the stream ends properly
+    @mock.patch("psycopg2.connect")
+    def test_read_end_stream(self, m):
+        '''reads the entire table from the database and validates that the
+        stream returns None to indicate the end'''
+
+        mock_recs = [
+            {'id': 1, 'col1': 'foo1', 'col2': 'bar1'},
+            {'id': 2, 'col1': 'foo2', 'col2': 'bar2'},
+            {'id': 3, 'col1': 'foo3', 'col2': 'bar3'}
+        ]
+
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = [{'value': 'my_schema.foo_bar'}]
+        result_order = [mock_recs, []]
+        m.return_value.cursor.return_value.fetchall.side_effect = result_order
+
+        rows = inst.read()
+        self.assertEqual(len(rows), len(mock_recs))
+
+        empty = inst.read()
+        self.assertEqual(empty, [])
+        end = inst.read()
+        self.assertEqual(end, None)
+
 
 if __name__ == "__main__":
     unittest.main()
