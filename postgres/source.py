@@ -41,10 +41,10 @@ class Postgres(panoply.DataSource):
         result = self.cursor.fetchall()
 
         # add __schemaname and __tablename to each row so it would be available
-        # as `destination` if needed
-        t = table.lower()
-        s = schema.lower()
-        result = [dict(r, __tablename=t, __schemaname=s) for r in result]
+        # as `destination` parameter if needed and also in case multiple tables
+        # are pulled into the same destination table
+        result = [dict(r, __tablename=table, __schemaname=schema)
+                  for r in result]
 
         # no more rows for this table, clear and proceed to next table
         if not result:

@@ -12,7 +12,7 @@ The input to the data source is a dictionary that describes the source details s
 An example input might look like this:
 ```python
 my_source = {
-    "addr": "postgres.domain.com/database_name",
+    "addr": "postgres.domain.com[:port]/database_name",
     "user": "[YOUR USERNAME]",
     "password": "[YOUR PASSWORD]",
     "tables": [
@@ -33,7 +33,7 @@ You read from the stream by making consecutive calls to the `read` method until 
 This data source will output a list of rows from the input tables. A single batch is returned with every call to `read` (batch size is determined by the `n` argument to `read` - defaults to 5000 records).
 Each item in the list is a dictionary representing that row.
 
-To each row we also append the schema name and table where that row originated from (since the stream reads all tables consecutively) under they keys `__schemaname` and `__tablename` respectively.
+To each row we also append the schema name and table where that row originated from (since the stream reads all tables consecutively) under the keys `__schemaname` and `__tablename` respectively.
 
 
 ### Listing tables
@@ -53,7 +53,7 @@ The `name` key specifies which is a view and which is table, however the `value`
 
 ## Contributing
 We'll gladly accept any contributions as long as:
-1. You changes are generic and not too specific to you (remember this serves many customers)
+1. Your changes are generic and not too specific to you (remember this serves many customers)
 1. You've added tests
 1. You've documented them
 1. It is backward compatible (if its not backward compatible use the `source.version` parameter to determine behaviour and contact us to coordinate)
