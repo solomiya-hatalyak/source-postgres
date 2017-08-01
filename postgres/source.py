@@ -118,7 +118,7 @@ def get_query(schema, table, src):
     '''return a SELECT query using properties from the source'''
     where = ''
     if src.get('inckey') and src.get('incval'):
-        where = ' WHERE {} > {}'.format(src['inckey'], src['incval'])
+        where = " WHERE {} > '{}'".format(src['inckey'], src['incval'])
 
     return 'SELECT * FROM "{}"."{}"{}'.format(schema, table, where)
 
