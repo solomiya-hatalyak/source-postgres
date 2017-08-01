@@ -2,7 +2,7 @@ from distutils.core import setup
 
 setup(
     name="panoply_postgres",
-    version="2.0.1",
+    version="2.0.2",
     description="Panoply Data Source for Postgres",
     author="Panoply Dev Team",
     author_email="support@panoply.io",
