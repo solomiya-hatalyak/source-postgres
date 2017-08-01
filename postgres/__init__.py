@@ -44,6 +44,7 @@ CONFIG = {
     'categories': ['DB', 'POPULAR'],
     'keywords': ['db', 'database', 'sql'],
     'createdAt': '2017-07-11',
+    'hostProperty': 'addr',
     'advanced': {
         'withIncremental': True
     }
