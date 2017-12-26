@@ -68,7 +68,7 @@ class Postgres(panoply.DataSource):
         return result
 
     def execute(self, query):
-        self.log(query)
+        self.log(query, "Loaded: %s" % self.loaded)
         self.cursor.execute(query)
 
     def close(self):
@@ -135,11 +135,17 @@ def connect(source, log):
 
 def get_query(schema, table, src):
     '''return a SELECT query using properties from the source'''
+    offset = ''
     where = ''
     if src.get('inckey') and src.get('incval'):
         where = " WHERE {} > '{}'".format(src['inckey'], src['incval'])
 
-    return 'SELECT * FROM "{}"."{}"{}'.format(schema, table, where)
+    state = src.get('state') or {}
+    table_state = state.get("%s_%s" % (schema, table))
+    if state and table_state:
+        offset = " OFFSET %s" % table_state
+
+    return 'SELECT * FROM "{}"."{}"{}{}'.format(schema, table, where, offset)
 
 
 def format_table_name(row):
