@@ -18,6 +18,11 @@ class TestPostgres(unittest.TestCase):
             "inckey": "inckey",
             "incval": "incval"
         }
+        self.mock_recs = [
+            {'id': 1, 'col1': 'foo1', 'col2': 'bar1'},
+            {'id': 2, 'col1': 'foo2', 'col2': 'bar2'},
+            {'id': 3, 'col1': 'foo3', 'col2': 'bar3'}
+        ]
 
     def tearDown(self):
         self.source = None
@@ -60,18 +65,12 @@ class TestPostgres(unittest.TestCase):
         '''reads a table from the database and validates that each row
         has a __tablename and __schemaname column'''
 
-        mock_recs = [
-            {'id': 1, 'col1': 'foo1', 'col2': 'bar1'},
-            {'id': 2, 'col1': 'foo2', 'col2': 'bar2'},
-            {'id': 3, 'col1': 'foo3', 'col2': 'bar3'}
-        ]
-
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'my_schema.foo_bar'}]
-        m.return_value.cursor.return_value.fetchall.return_value = mock_recs
+        m.return_value.cursor.return_value.fetchall.return_value = self.mock_recs
 
         rows = inst.read()
-        self.assertEqual(len(rows), len(mock_recs))
+        self.assertEqual(len(rows), len(self.mock_recs))
         for x in range(0, len(rows)):
             self.assertEqual(rows[x]['__tablename'], 'foo_bar')
             self.assertEqual(rows[x]['__schemaname'], 'my_schema')
@@ -159,19 +158,13 @@ class TestPostgres(unittest.TestCase):
         '''reads the entire table from the database and validates that the
         stream returns None to indicate the end'''
 
-        mock_recs = [
-            {'id': 1, 'col1': 'foo1', 'col2': 'bar1'},
-            {'id': 2, 'col1': 'foo2', 'col2': 'bar2'},
-            {'id': 3, 'col1': 'foo3', 'col2': 'bar3'}
-        ]
-
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'my_schema.foo_bar'}]
-        result_order = [mock_recs, []]
+        result_order = [self.mock_recs, []]
         m.return_value.cursor.return_value.fetchall.side_effect = result_order
 
         rows = inst.read()
-        self.assertEqual(len(rows), len(mock_recs))
+        self.assertEqual(len(rows), len(self.mock_recs))
 
         empty = inst.read()
         self.assertEqual(empty, [])
