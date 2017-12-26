@@ -171,6 +171,31 @@ class TestPostgres(unittest.TestCase):
         end = inst.read()
         self.assertEqual(end, None)
 
+    # Make sure that the state is reorted and that the
+    # output data contains a key __state
+    @mock.patch("postgres.source.Postgres.state")
+    @mock.patch("psycopg2.connect")
+    def test_reports_state(self, mock_connect, mock_state):
+        '''before returning a batch of data, the sources state should be
+        reported as well as having the state ID appended to each data object'''
+
+        inst = Postgres(self.source, OPTIONS)
+        table_name = 'my_schema.foo_bar'
+        inst.tables = [{'value': table_name}]
+        result_order = [self.mock_recs, []]
+        mock_connect.return_value.cursor.return_value.fetchall.side_effect = result_order
+
+        rows = inst.read()
+        state_id = rows[0]['__state']
+        state_obj = dict([(table_name, len(self.mock_recs))])
+
+        msg = 'State ID is not the same in all rows!'
+        for row in rows:
+            self.assertEqual(row['__state'], state_id, msg)
+
+        # State function was called with relevant table name and row count
+        mock_state.assert_called_with(state_id, state_obj)
+
 
 if __name__ == "__main__":
     unittest.main()
