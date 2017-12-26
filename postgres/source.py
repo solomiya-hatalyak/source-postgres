@@ -18,8 +18,10 @@ class Postgres(panoply.DataSource):
         self.index = 0
         self.conn = None
         self.cursor = None
+        self.batch_size = self.source.get('__batchSize', None)
 
-    def read(self, n=BATCH_SIZE):
+    def read(self, batch_size=None):
+        batch_size = self.batch_size or BATCH_SIZE
         total = len(self.tables)
         if self.index >= total:
             return None  # no tables left, we're done
@@ -37,7 +39,7 @@ class Postgres(panoply.DataSource):
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
-        self.execute('FETCH FORWARD {} FROM cur'.format(n))
+        self.execute('FETCH FORWARD {} FROM cur'.format(batch_size))
         result = self.cursor.fetchall()
 
         # add __schemaname and __tablename to each row so it would be available
