@@ -1,4 +1,5 @@
 import panoply
+import uuid
 import psycopg2
 import psycopg2.extras
 
@@ -18,7 +19,8 @@ class Postgres(panoply.DataSource):
         self.index = 0
         self.conn = None
         self.cursor = None
-        self.batch_size = self.source.get('__batchSize', None)
+        self.state_id = None
+        self.loaded = 0
 
     def read(self, batch_size=None):
         batch_size = self.batch_size or BATCH_SIZE
@@ -42,16 +44,25 @@ class Postgres(panoply.DataSource):
         self.execute('FETCH FORWARD {} FROM cur'.format(batch_size))
         result = self.cursor.fetchall()
 
-        # add __schemaname and __tablename to each row so it would be available
+        self.state_id = str(uuid.uuid4())
+        # Add __schemaname and __tablename to each row so it would be available
         # as `destination` parameter if needed and also in case multiple tables
-        # are pulled into the same destination table
-        result = [dict(r, __tablename=table, __schemaname=schema)
-                  for r in result]
+        # are pulled into the same destination table.
+        # State_id is also added in order to support checkpoints
+        internals = dict(
+            __tablename=table,
+            __schemaname=schema,
+            __state=self.state_id
+        )
+        result = [dict(r, **internals) for r in result]
+        self.loaded += len(result)
+        self._report_state(internals, self.loaded)
 
         # no more rows for this table, clear and proceed to next table
         if not result:
             self.close()
             self.index += 1
+            self.loaded = 0
 
         return result
 
@@ -87,6 +98,11 @@ class Postgres(panoply.DataSource):
         self.close()
 
         return result
+
+    def _report_state(self, params, loaded):
+        table_name = '%(__schemaname)s_%(__tablename)s' % params
+        state = dict([(table_name, loaded)])
+        self.state(self.state_id, state)
 
 
 def connect(source, log):
