@@ -101,7 +101,7 @@ class Postgres(panoply.DataSource):
         return result
 
     def _report_state(self, params, loaded):
-        table_name = '%(__schemaname)s_%(__tablename)s' % params
+        table_name = '%(__schemaname)s.%(__tablename)s' % params
         state = dict([(table_name, loaded)])
         self.state(self.state_id, state)
 
@@ -141,7 +141,7 @@ def get_query(schema, table, src):
         where = " WHERE {} > '{}'".format(src['inckey'], src['incval'])
 
     state = src.get('state') or {}
-    table_state = state.get("%s_%s" % (schema, table))
+    table_state = state.get("%s.%s" % (schema, table))
     if state and table_state:
         offset = " OFFSET %s" % table_state
 
