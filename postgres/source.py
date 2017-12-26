@@ -14,6 +14,7 @@ class Postgres(panoply.DataSource):
 
         self.source['destination'] = self.source.get('destination') or DEST
 
+        self.batch_size = self.source.get('__batchSize', None)
         tables = self.source.get('tables', [])
         self.tables = tables[:]
         self.index = 0
