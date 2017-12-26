@@ -8,7 +8,7 @@ setup(
     author_email="support@panoply.io",
     url="http://panoply.io",
     install_requires=[
-        "panoply-python-sdk==1.3.4",
+        "panoply-python-sdk==1.4.0",
         "psycopg2==2.7.1"
     ],
     extras_require={
