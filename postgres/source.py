@@ -6,6 +6,7 @@ import psycopg2.extras
 
 DEST = '{__tablename}'
 BATCH_SIZE = 5000
+CONNECT_TIMEOUT = 15 # seconds
 
 
 class Postgres(panoply.DataSource):
@@ -120,7 +121,8 @@ def connect(source, log):
             port=port,
             user=source['user'],
             password=source['password'],
-            dbname=dbname
+            dbname=dbname,
+            connect_timeout=CONNECT_TIMEOUT
         )
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     except psycopg2.OperationalError, e:
