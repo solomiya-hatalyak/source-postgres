@@ -20,8 +20,14 @@ def _log_backoff(details):
         err.message
     )
 
+# Used for testing - this constant is overriden durring tests so that we don't
+# actually have to wait for the retry
+def _get_connect_timeout():
+    return CONNECT_TIMEOUT
+
 
 class Postgres(panoply.DataSource):
+
     def __init__(self, *args, **kwargs):
         super(Postgres, self).__init__(*args, **kwargs)
 
@@ -40,7 +46,7 @@ class Postgres(panoply.DataSource):
                           psycopg2.DatabaseError,
                           max_tries=MAX_RETRIES,
                           on_backoff=_log_backoff,
-                          base=RETRY_TIMEOUT)
+                          base=_get_connect_timeout)
     def read(self, batch_size=None):
         batch_size = self.batch_size or BATCH_SIZE
         total = len(self.tables)
