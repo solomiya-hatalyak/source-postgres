@@ -62,13 +62,14 @@ class TestPostgres(unittest.TestCase):
 
     # read a table from the database
     @mock.patch("psycopg2.connect")
-    def test_read(self, m):
+    def test_read(self, mock_connect):
         '''reads a table from the database and validates that each row
         has a __tablename and __schemaname column'''
 
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'my_schema.foo_bar'}]
-        m.return_value.cursor.return_value.fetchall.return_value = self.mock_recs
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.return_value = self.mock_recs
 
         rows = inst.read()
         self.assertEqual(len(rows), len(self.mock_recs))
@@ -77,18 +78,18 @@ class TestPostgres(unittest.TestCase):
             self.assertEqual(rows[x]['__schemaname'], 'my_schema')
 
     @mock.patch("psycopg2.connect")
-    def test_incremental(self, m):
+    def test_incremental(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'schema.foo'}]
         inst.read()
 
         q = ('DECLARE cur CURSOR FOR '
              'SELECT * FROM "schema"."foo" WHERE inckey > \'incval\'')
-        execute_mock = m.return_value.cursor.return_value.execute
+        execute_mock = mock_connect.return_value.cursor.return_value.execute
         execute_mock.assert_has_calls([mock.call(q)], True)
 
     @mock.patch("psycopg2.connect")
-    def test_schema_name(self, m):
+    def test_schema_name(self, mock_connect):
         '''Test schema name is used when queries and that both schema and table
         names are wrapped in enclosing quotes'''
 
@@ -104,27 +105,29 @@ class TestPostgres(unittest.TestCase):
         inst.read()
 
         q = 'DECLARE cur CURSOR FOR SELECT * FROM "schema"."foo"'
-        execute_mock = m.return_value.cursor.return_value.execute
+        execute_mock = mock_connect.return_value.cursor.return_value.execute
         execute_mock.assert_has_calls([mock.call(q)], True)
 
     @mock.patch("psycopg2.connect")
-    def test_connect_error_auth(self, m):
+    def test_connect_error_auth(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'schema.foo'}]
-        m.side_effect = psycopg2.OperationalError('authentication failed')
+        msg = 'authentication failed'
+        mock_connect.side_effect = psycopg2.OperationalError(msg)
         with self.assertRaises(PanoplyException):
             inst.get_tables()
 
     @mock.patch("psycopg2.connect")
-    def test_connect_not_auth_error(self, m):
+    def test_connect_not_auth_error(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'schema.foo'}]
-        m.side_effect = psycopg2.OperationalError('something unexpected')
+        msg = 'something unexpected'
+        mock_connect.side_effect = psycopg2.OperationalError(msg)
         with self.assertRaises(psycopg2.OperationalError):
             inst.get_tables()
 
     @mock.patch("psycopg2.connect")
-    def test_default_port(self, m):
+    def test_default_port(self, mock_connect):
         source = {
             "addr": "test.database.name/foobar",
             "user": "test",
@@ -134,7 +137,7 @@ class TestPostgres(unittest.TestCase):
         inst = Postgres(source, OPTIONS)
         inst.read()
 
-        m.assert_called_with(
+        mock_connect.assert_called_with(
             host="test.database.name",
             port=5432,
             user=source['user'],
@@ -144,7 +147,7 @@ class TestPostgres(unittest.TestCase):
         )
 
     @mock.patch("psycopg2.connect")
-    def test_custom_port(self, m):
+    def test_custom_port(self, mock_connect):
         source = {
             "addr": "test.database.name:5439/foobar",
             "user": "test",
@@ -154,7 +157,7 @@ class TestPostgres(unittest.TestCase):
         inst = Postgres(source, OPTIONS)
         inst.read()
 
-        m.assert_called_with(
+        mock_connect.assert_called_with(
             host="test.database.name",
             port=5439,
             user=source['user'],
@@ -165,14 +168,15 @@ class TestPostgres(unittest.TestCase):
 
     # Make sure the stream ends properly
     @mock.patch("psycopg2.connect")
-    def test_read_end_stream(self, m):
+    def test_read_end_stream(self, mock_connect):
         '''reads the entire table from the database and validates that the
         stream returns None to indicate the end'''
 
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'my_schema.foo_bar'}]
         result_order = [self.mock_recs, []]
-        m.return_value.cursor.return_value.fetchall.side_effect = result_order
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.side_effect = result_order
 
         rows = inst.read()
         self.assertEqual(len(rows), len(self.mock_recs))
@@ -194,7 +198,8 @@ class TestPostgres(unittest.TestCase):
         table_name = 'my_schema.foo_bar'
         inst.tables = [{'value': table_name}]
         result_order = [self.mock_recs, []]
-        mock_connect.return_value.cursor.return_value.fetchall.side_effect = result_order
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.side_effect = result_order
 
         rows = inst.read()
         state_id = rows[0]['__state']
@@ -227,7 +232,7 @@ class TestPostgres(unittest.TestCase):
 
     @mock.patch("postgres.source.Postgres.execute")
     @mock.patch("psycopg2.connect")
-    def test_batch_size(self,mock_connect, mock_execute):
+    def test_batch_size(self, mock_connect, mock_execute):
         customBatchSize = 42
         self.source['__batchSize'] = customBatchSize
         inst = Postgres(self.source, OPTIONS)

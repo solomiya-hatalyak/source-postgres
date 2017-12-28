@@ -7,9 +7,10 @@ import backoff
 
 DEST = '{__tablename}'
 BATCH_SIZE = 5000
-CONNECT_TIMEOUT = 15 # seconds
+CONNECT_TIMEOUT = 15  # seconds
 MAX_RETRIES = 5
 RETRY_TIMEOUT = 2
+
 
 def _log_backoff(details):
     err = sys.exc_info()[1]
@@ -19,6 +20,7 @@ def _log_backoff(details):
         err.pgcode or '',
         err.message
     )
+
 
 # Used for testing - this constant is overriden durring tests so that we don't
 # actually have to wait for the retry
