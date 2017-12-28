@@ -38,7 +38,7 @@ class Postgres(panoply.DataSource):
 
         # if there is no cursor (starting a new table read), create it
         if not self.cursor:
-            self.conn, self.cursor = connect(self.source, self.log)
+            self.conn, self.cursor = connect(self.source)
             q = get_query(schema, table, self.source)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
@@ -93,7 +93,7 @@ class Postgres(panoply.DataSource):
             WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
         '''
 
-        self.conn, self.cursor = connect(self.source, self.log)
+        self.conn, self.cursor = connect(self.source)
         self.execute(query)
         result = map(format_table_name, self.cursor.fetchall())
 
@@ -107,7 +107,7 @@ class Postgres(panoply.DataSource):
         self.state(self.state_id, state)
 
 
-def connect(source, log):
+def connect(source):
     '''connect to the DB using properties from the source'''
     host, dbname = source['addr'].rsplit('/', 1)
     port = 5432
