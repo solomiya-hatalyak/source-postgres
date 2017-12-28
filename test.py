@@ -207,6 +207,64 @@ class TestPostgres(unittest.TestCase):
         # State function was called with relevant table name and row count
         mock_state.assert_called_with(state_id, state_obj)
 
+    @mock.patch("postgres.source.Postgres.execute")
+    @mock.patch("psycopg2.connect")
+    def test_recover_from_state(self, mock_connect, mock_execute):
+        ''' continues to read a table from the saved state '''
+
+        table_offset = 100
+        self.source['state'] = {
+            'my_schema.foo_bar': table_offset
+        }
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = [{'value': 'my_schema.foo_bar'}]
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.return_value = self.mock_recs
+
+        inst.read()
+        first_query = mock_execute.call_args_list[0][0][0]
+        self.assertTrue(first_query.endswith('OFFSET %s' % table_offset))
+
+    @mock.patch("postgres.source.Postgres.execute")
+    @mock.patch("psycopg2.connect")
+    def test_batch_size(self,mock_connect, mock_execute):
+        customBatchSize = 42
+        self.source['__batchSize'] = customBatchSize
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = [{'value': 'my_schema.foo_bar'}]
+
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.return_value = self.mock_recs
+
+        inst.read()
+        second_query = mock_execute.call_args_list[1][0][0]
+        txt = 'FETCH FORWARD %s' % customBatchSize
+        self.assertTrue(second_query.startswith(txt))
+
+    def test_reset_query_on_error(self):
+        inst = Postgres(self.source, OPTIONS)
+        mock_cursor = mock.Mock()
+        mock_cursor.execute.side_effect = psycopg2.DatabaseError('oh noes!')
+        inst.cursor = mock_cursor
+        inst.loaded = 42
+        with self.assertRaises(psycopg2.DatabaseError):
+            inst.execute('SELECT 1')
+
+        # The self.loaded variable should have been reset to 0 in order to
+        # reset the query and start from the begining.
+        self.assertEqual(inst.loaded, 0)
+
+    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("psycopg2.connect")
+    def test_read_retries(self, mock_connect):
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = [{'value': 'my_schema.foo_bar'}]
+        mock_connect.side_effect = psycopg2.DatabaseError('TestRetiresError')
+        with self.assertRaises(psycopg2.DatabaseError):
+            inst.read()
+
+        self.assertEqual(mock_connect.call_count, postgres.source.MAX_RETRIES)
+
 
 if __name__ == "__main__":
     unittest.main()
