@@ -1,12 +1,24 @@
+import sys
 import panoply
 import uuid
 import psycopg2
 import psycopg2.extras
-
+import backoff
 
 DEST = '{__tablename}'
 BATCH_SIZE = 5000
 CONNECT_TIMEOUT = 15 # seconds
+MAX_RETRIES = 5
+RETRY_TIMEOUT = 2
+
+def _log_backoff(details):
+    err = sys.exc_info()[1]
+    print 'Retrying (attempt %s) in %d seconds, after error %s: %s' % (
+        details['tries'],
+        details['wait'],
+        err.pgcode or '',
+        err.message
+    )
 
 
 class Postgres(panoply.DataSource):
@@ -24,6 +36,11 @@ class Postgres(panoply.DataSource):
         self.state_id = None
         self.loaded = 0
 
+    @backoff.on_exception(backoff.expo,
+                          psycopg2.DatabaseError,
+                          max_tries=MAX_RETRIES,
+                          on_backoff=_log_backoff,
+                          base=RETRY_TIMEOUT)
     def read(self, batch_size=None):
         batch_size = self.batch_size or BATCH_SIZE
         total = len(self.tables)
@@ -36,7 +53,6 @@ class Postgres(panoply.DataSource):
               .format(self.index + 1, table, total)
         self.progress(self.index + 1, total, msg)
 
-        # if there is no cursor (starting a new table read), create it
         if not self.cursor:
             self.conn, self.cursor = connect(self.source)
             q = get_query(schema, table, self.source)
@@ -70,7 +86,14 @@ class Postgres(panoply.DataSource):
 
     def execute(self, query):
         self.log(query, "Loaded: %s" % self.loaded)
-        self.cursor.execute(query)
+        try:
+            self.cursor.execute(query)
+        except psycopg2.DatabaseError, e:
+            # We're ensuring that there is no connection or cursor objects
+            # after an exception so that when we retry,
+            # a new connection will be created.
+            self.reset()
+            raise
 
     def close(self):
         '''close the connection, and clear everything'''
@@ -83,6 +106,10 @@ class Postgres(panoply.DataSource):
             self.conn.rollback()
             self.conn.close()
 
+        self.reset()
+
+    def reset(self):
+        self.loaded = 0
         self.conn = None
         self.cursor = None
 
