@@ -126,11 +126,12 @@ def connect(source):
         )
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     except psycopg2.OperationalError, e:
-        log(e)
-        raise panoply.PanoplyException(
-            "Login failed for user: {}".format(source['user']),
-            retryable=False
-        )
+        if 'authentication failed' in e.message:
+            e = panoply.PanoplyException(
+                "Login failed for user: {}".format(source['user']),
+                retryable=False
+            )
+        raise e
 
     return conn, cur
 
