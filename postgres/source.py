@@ -72,7 +72,7 @@ class Postgres(panoply.DataSource):
         # Add __schemaname and __tablename to each row so it would be available
         # as `destination` parameter if needed and also in case multiple tables
         # are pulled into the same destination table.
-        # State_id is also added in order to support checkpoints
+        # state_id is also added in order to support checkpoints
         internals = dict(
             __tablename=table,
             __schemaname=schema,
