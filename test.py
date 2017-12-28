@@ -1,6 +1,7 @@
 import mock
 import unittest
 import psycopg2
+import postgres
 from postgres.source import Postgres
 from panoply import PanoplyException
 
@@ -107,12 +108,20 @@ class TestPostgres(unittest.TestCase):
         execute_mock.assert_has_calls([mock.call(q)], True)
 
     @mock.patch("psycopg2.connect")
-    def test_connect_error(self, m):
+    def test_connect_error_auth(self, m):
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'schema.foo'}]
-        m.side_effect = psycopg2.OperationalError('Mock Error')
+        m.side_effect = psycopg2.OperationalError('authentication failed')
         with self.assertRaises(PanoplyException):
-            inst.read()
+            inst.get_tables()
+
+    @mock.patch("psycopg2.connect")
+    def test_connect_not_auth_error(self, m):
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = [{'value': 'schema.foo'}]
+        m.side_effect = psycopg2.OperationalError('something unexpected')
+        with self.assertRaises(psycopg2.OperationalError):
+            inst.get_tables()
 
     @mock.patch("psycopg2.connect")
     def test_default_port(self, m):
@@ -130,7 +139,8 @@ class TestPostgres(unittest.TestCase):
             port=5432,
             user=source['user'],
             password=source['password'],
-            dbname="foobar"
+            dbname="foobar",
+            connect_timeout=postgres.source.CONNECT_TIMEOUT
         )
 
     @mock.patch("psycopg2.connect")
@@ -149,7 +159,8 @@ class TestPostgres(unittest.TestCase):
             port=5439,
             user=source['user'],
             password=source['password'],
-            dbname="foobar"
+            dbname="foobar",
+            connect_timeout=postgres.source.CONNECT_TIMEOUT
         )
 
     # Make sure the stream ends properly
