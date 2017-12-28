@@ -9,7 +9,8 @@ setup(
     url="http://panoply.io",
     install_requires=[
         "panoply-python-sdk==1.4.0",
-        "psycopg2==2.7.1"
+        "psycopg2==2.7.1",
+        "backoff==1.4.3"
     ],
     extras_require={
         "test": [
