@@ -30,12 +30,12 @@ def _get_connect_timeout():
 
 class Postgres(panoply.DataSource):
 
-    def __init__(self, *args, **kwargs):
-        super(Postgres, self).__init__(*args, **kwargs)
+    def __init__(self, source, options):
+        super(Postgres, self).__init__(source, options)
 
-        self.source['destination'] = self.source.get('destination') or DEST
+        self.source['destination'] = self.source.get('destination', DEST)
 
-        self.batch_size = self.source.get('__batchSize', None)
+        self.batch_size = self.source.get('__batchSize', BATCH_SIZE)
         tables = self.source.get('tables', [])
         self.tables = tables[:]
         self.index = 0
@@ -50,7 +50,7 @@ class Postgres(panoply.DataSource):
                           on_backoff=_log_backoff,
                           base=_get_connect_timeout)
     def read(self, batch_size=None):
-        batch_size = self.batch_size or BATCH_SIZE
+        batch_size = batch_size or self.batch_size
         total = len(self.tables)
         if self.index >= total:
             return None  # no tables left, we're done
@@ -138,8 +138,7 @@ class Postgres(panoply.DataSource):
 
     def _report_state(self, params, loaded):
         table_name = '%(__schemaname)s.%(__tablename)s' % params
-        state = dict([(table_name, loaded)])
-        self.state(self.state_id, state)
+        self.state(self.state_id, {table_name: loaded})
 
 
 def connect(source):
@@ -178,7 +177,7 @@ def get_query(schema, table, src):
     if src.get('inckey') and src.get('incval'):
         where = " WHERE {} > '{}'".format(src['inckey'], src['incval'])
 
-    state = src.get('state') or {}
+    state = src.get('state', {})
     table_state = state.get("%s.%s" % (schema, table))
     if state and table_state:
         offset = " OFFSET %s" % table_state

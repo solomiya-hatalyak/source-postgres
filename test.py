@@ -109,7 +109,7 @@ class TestPostgres(unittest.TestCase):
         execute_mock.assert_has_calls([mock.call(q)], True)
 
     @mock.patch("psycopg2.connect")
-    def test_connect_error_auth(self, mock_connect):
+    def test_connect_auth_error(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'schema.foo'}]
         msg = 'authentication failed'
@@ -118,7 +118,7 @@ class TestPostgres(unittest.TestCase):
             inst.get_tables()
 
     @mock.patch("psycopg2.connect")
-    def test_connect_not_auth_error(self, mock_connect):
+    def test_connect_other_error(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'schema.foo'}]
         msg = 'something unexpected'
@@ -186,7 +186,7 @@ class TestPostgres(unittest.TestCase):
         end = inst.read()
         self.assertEqual(end, None)
 
-    # Make sure that the state is reorted and that the
+    # Make sure that the state is reported and that the
     # output data contains a key __state
     @mock.patch("postgres.source.Postgres.state")
     @mock.patch("psycopg2.connect")
