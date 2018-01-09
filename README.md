@@ -54,6 +54,6 @@ The `name` key specifies which is a view and which is table, however the `value`
 ## Contributing
 We'll gladly accept any contributions as long as:
 1. Your changes are generic and not too specific to you (remember this serves many customers)
-1. You've added tests
-1. You've documented them
-1. It is backward compatible (if its not backward compatible use the `source.version` parameter to determine behaviour and contact us to coordinate)
+2. You've added tests
+3. You've documented them
+4. It is backward compatible (if its not backward compatible use the `source.version` parameter to determine behaviour and contact us to coordinate)

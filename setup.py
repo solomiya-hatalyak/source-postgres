@@ -2,14 +2,15 @@ from distutils.core import setup
 
 setup(
     name="panoply_postgres",
-    version="2.0.2",
+    version="2.1.0",
     description="Panoply Data Source for Postgres",
     author="Panoply Dev Team",
     author_email="support@panoply.io",
     url="http://panoply.io",
     install_requires=[
-        "panoply-python-sdk==1.3.4",
-        "psycopg2==2.7.1"
+        "panoply-python-sdk==1.4.0",
+        "psycopg2==2.7.1",
+        "backoff==1.4.3"
     ],
     extras_require={
         "test": [
