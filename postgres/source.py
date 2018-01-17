@@ -172,6 +172,7 @@ def connect(source):
 
     return conn, cur
 
+
 def get_query(schema, table, src, state=None):
     '''return a SELECT query using properties from the source'''
     offset = ''
@@ -183,6 +184,7 @@ def get_query(schema, table, src, state=None):
         offset = " OFFSET %s" % state
 
     return 'SELECT * FROM "{}"."{}"{}{}'.format(schema, table, where, offset)
+
 
 def format_table_name(row):
     '''format the table name with schema (and type if applicable)'''
