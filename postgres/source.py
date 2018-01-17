@@ -105,6 +105,7 @@ class Postgres(panoply.DataSource):
             # a new connection will be created.
             self.reset()
             raise
+        self.log("DONE", query)
 
     def close(self):
         '''close the connection, and clear everything'''
