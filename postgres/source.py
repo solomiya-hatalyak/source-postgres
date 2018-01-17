@@ -63,7 +63,7 @@ class Postgres(panoply.DataSource):
 
         if not self.cursor:
             self.conn, self.cursor = connect(self.source)
-            q = get_query(schema, table, self.source)
+            q = self._get_query(schema, table, self.source)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
@@ -140,6 +140,22 @@ class Postgres(panoply.DataSource):
         table_name = '%(__schemaname)s.%(__tablename)s' % params
         self.state(self.state_id, {table_name: loaded})
 
+    def _get_query(self, schema, table, src):
+        '''return a SELECT query using properties from the source'''
+        offset = ''
+        where = ''
+        if src.get('inckey') and src.get('incval'):
+            where = " WHERE {} > '{}'".format(src['inckey'], src['incval'])
+
+        state = src.get('state', {})
+        table_state = state.get("%s.%s" % (schema, table))
+        if state and table_state:
+            offset = " OFFSET %s" % table_state
+            self.loaded = table_state
+
+        return 'SELECT * FROM "{}"."{}"{}{}'.format(schema, table, where, offset)
+
+
 
 def connect(source):
     '''connect to the DB using properties from the source'''
@@ -168,21 +184,6 @@ def connect(source):
         raise e
 
     return conn, cur
-
-
-def get_query(schema, table, src):
-    '''return a SELECT query using properties from the source'''
-    offset = ''
-    where = ''
-    if src.get('inckey') and src.get('incval'):
-        where = " WHERE {} > '{}'".format(src['inckey'], src['incval'])
-
-    state = src.get('state', {})
-    table_state = state.get("%s.%s" % (schema, table))
-    if state and table_state:
-        offset = " OFFSET %s" % table_state
-
-    return 'SELECT * FROM "{}"."{}"{}{}'.format(schema, table, where, offset)
 
 
 def format_table_name(row):
