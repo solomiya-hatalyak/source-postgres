@@ -43,6 +43,7 @@ class Postgres(panoply.DataSource):
         self.cursor = None
         self.state_id = None
         self.loaded = 0
+        self.saved_state = self.source.get('state', {})
 
     @backoff.on_exception(backoff.expo,
                           psycopg2.DatabaseError,
@@ -63,7 +64,9 @@ class Postgres(panoply.DataSource):
 
         if not self.cursor:
             self.conn, self.cursor = connect(self.source)
-            q = get_query(schema, table, self.source)
+            state = self.saved_state.get("%s.%s" % (schema, table))
+            self.loaded = state if state is not None else 0
+            q = get_query(schema, table, self.source, state)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
@@ -170,17 +173,15 @@ def connect(source):
     return conn, cur
 
 
-def get_query(schema, table, src):
+def get_query(schema, table, src, state=None):
     '''return a SELECT query using properties from the source'''
     offset = ''
     where = ''
     if src.get('inckey') and src.get('incval'):
         where = " WHERE {} > '{}'".format(src['inckey'], src['incval'])
 
-    state = src.get('state', {})
-    table_state = state.get("%s.%s" % (schema, table))
-    if state and table_state:
-        offset = " OFFSET %s" % table_state
+    if state:
+        offset = " OFFSET %s" % state
 
     return 'SELECT * FROM "{}"."{}"{}{}'.format(schema, table, where, offset)
 

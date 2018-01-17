@@ -228,7 +228,10 @@ class TestPostgres(unittest.TestCase):
 
         inst.read()
         first_query = mock_execute.call_args_list[0][0][0]
+        # The query should use `OFFSET` to skip already collected data
         self.assertTrue(first_query.endswith('OFFSET %s' % table_offset))
+        # Three records were returned so the loaded count should be OFFSET + 3
+        self.assertEqual(inst.loaded, table_offset + len(self.mock_recs))
 
     @mock.patch("postgres.source.Postgres.execute")
     @mock.patch("psycopg2.connect")
