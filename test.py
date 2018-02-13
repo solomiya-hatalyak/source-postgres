@@ -233,6 +233,18 @@ class TestPostgres(unittest.TestCase):
         # Three records were returned so the loaded count should be OFFSET + 3
         self.assertEqual(inst.loaded, table_offset + len(self.mock_recs))
 
+    def test_remove_state_from_source(self):
+        ''' once extracted, the state object is removed from the source '''
+
+        state = { 'my_schema.foo_bar': 1 }
+        self.source['state'] = state
+        inst = Postgres(self.source, OPTIONS)
+
+        # State object should have been extracted and saved on the stream
+        self.assertEqual(inst.saved_state, state)
+        # No state key should be inside the source definition
+        self.assertIsNone(inst.source.get('state', None))
+
     @mock.patch("postgres.source.Postgres.execute")
     @mock.patch("psycopg2.connect")
     def test_batch_size(self, mock_connect, mock_execute):
