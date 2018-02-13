@@ -212,6 +212,25 @@ class TestPostgres(unittest.TestCase):
         # State function was called with relevant table name and row count
         mock_state.assert_called_with(state_id, state_obj)
 
+    # Make sure that no state is reported if no data is returned
+    @mock.patch("postgres.source.Postgres.state")
+    @mock.patch("psycopg2.connect")
+    def test_no_state_for_empty_results(self, mock_connect, mock_state):
+        '''before returning a batch of data, the sources state should be
+        reported as well as having the state ID appended to each data object'''
+
+        inst = Postgres(self.source, OPTIONS)
+        table_name = 'my_schema.foo_bar'
+        inst.tables = [{'value': table_name}]
+        result_order = [[], []]
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.side_effect = result_order
+
+        rows = inst.read()
+
+        # State function was called with relevant table name and row count
+        mock_state.assert_not_called()
+
     @mock.patch("postgres.source.Postgres.execute")
     @mock.patch("psycopg2.connect")
     def test_recover_from_state(self, mock_connect, mock_execute):
