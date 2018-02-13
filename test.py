@@ -255,7 +255,7 @@ class TestPostgres(unittest.TestCase):
     def test_remove_state_from_source(self):
         ''' once extracted, the state object is removed from the source '''
 
-        state = { 'my_schema.foo_bar': 1 }
+        state = {'my_schema.foo_bar': 1}
         self.source['state'] = state
         inst = Postgres(self.source, OPTIONS)
 
