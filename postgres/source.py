@@ -85,13 +85,14 @@ class Postgres(panoply.DataSource):
         )
         result = [dict(r, **internals) for r in result]
         self.loaded += len(result)
-        self._report_state(internals, self.loaded)
 
         # no more rows for this table, clear and proceed to next table
         if not result:
             self.close()
             self.index += 1
             self.loaded = 0
+        else:
+            self._report_state(internals, self.loaded)
 
         return result
 
