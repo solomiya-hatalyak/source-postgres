@@ -45,6 +45,10 @@ class Postgres(panoply.DataSource):
         self.loaded = 0
         self.saved_state = self.source.get('state', {})
 
+        # Remove the state object from the source definition
+        # since it does not need to be saved on the source.
+        self.source.pop('state', None)
+
     @backoff.on_exception(backoff.expo,
                           psycopg2.DatabaseError,
                           max_tries=MAX_RETRIES,
