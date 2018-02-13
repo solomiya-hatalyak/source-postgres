@@ -212,6 +212,25 @@ class TestPostgres(unittest.TestCase):
         # State function was called with relevant table name and row count
         mock_state.assert_called_with(state_id, state_obj)
 
+    # Make sure that no state is reported if no data is returned
+    @mock.patch("postgres.source.Postgres.state")
+    @mock.patch("psycopg2.connect")
+    def test_no_state_for_empty_results(self, mock_connect, mock_state):
+        '''before returning a batch of data, the sources state should be
+        reported as well as having the state ID appended to each data object'''
+
+        inst = Postgres(self.source, OPTIONS)
+        table_name = 'my_schema.foo_bar'
+        inst.tables = [{'value': table_name}]
+        result_order = [[], []]
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.side_effect = result_order
+
+        rows = inst.read()
+
+        # State function was called with relevant table name and row count
+        mock_state.assert_not_called()
+
     @mock.patch("postgres.source.Postgres.execute")
     @mock.patch("psycopg2.connect")
     def test_recover_from_state(self, mock_connect, mock_execute):
@@ -232,6 +251,18 @@ class TestPostgres(unittest.TestCase):
         self.assertTrue(first_query.endswith('OFFSET %s' % table_offset))
         # Three records were returned so the loaded count should be OFFSET + 3
         self.assertEqual(inst.loaded, table_offset + len(self.mock_recs))
+
+    def test_remove_state_from_source(self):
+        ''' once extracted, the state object is removed from the source '''
+
+        state = {'my_schema.foo_bar': 1}
+        self.source['state'] = state
+        inst = Postgres(self.source, OPTIONS)
+
+        # State object should have been extracted and saved on the stream
+        self.assertEqual(inst.saved_state, state)
+        # No state key should be inside the source definition
+        self.assertIsNone(inst.source.get('state', None))
 
     @mock.patch("postgres.source.Postgres.execute")
     @mock.patch("psycopg2.connect")
