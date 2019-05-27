@@ -69,8 +69,9 @@ class Postgres(panoply.DataSource):
         if not self.cursor:
             self.conn, self.cursor = connect(self.source)
             state = self.saved_state.get("%s.%s" % (schema, table))
-            self.loaded = state if state is not None else 0
-            q = get_query(schema, table, self.source, state)
+            if state:
+                self.loaded = state
+            q = get_query(schema, table, self.source, self.loaded)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
@@ -104,12 +105,16 @@ class Postgres(panoply.DataSource):
         self.log(query, "Loaded: %s" % self.loaded)
         try:
             self.cursor.execute(query)
-        except psycopg2.DatabaseError, e:
+        except psycopg2.DatabaseError as e:
             # We're ensuring that there is no connection or cursor objects
             # after an exception so that when we retry,
             # a new connection will be created.
-            self.reset()
-            raise
+
+            # Since we got an error, it will trigger backoff expo
+            # We want the source to continue where it left off
+            self.reset(reset_offset=False)
+            print('Raise error {}'.format(e.message))
+            raise e
         self.log("DONE", query)
 
     def close(self):
@@ -123,10 +128,11 @@ class Postgres(panoply.DataSource):
             self.conn.rollback()
             self.conn.close()
 
-        self.reset()
+        self.reset(reset_offset=True)
 
-    def reset(self):
-        self.loaded = 0
+    def reset(self, reset_offset=True):
+        if reset_offset:
+            self.loaded = 0
         self.conn = None
         self.cursor = None
 
@@ -183,13 +189,17 @@ def get_query(schema, table, src, state=None):
     '''return a SELECT query using properties from the source'''
     offset = ''
     where = ''
+    orderby = ''
     if src.get('inckey') and src.get('incval'):
-        where = " WHERE {} > '{}'".format(src['inckey'], src['incval'])
+        where = " WHERE {} > '{}'".format(src.get('inckey'), src.get('incval'))
+        orderby = " ORDER BY {}".format(src.get('inckey'))
 
     if state:
         offset = " OFFSET %s" % state
 
-    return 'SELECT * FROM "{}"."{}"{}{}'.format(schema, table, where, offset)
+    return 'SELECT * FROM "{}"."{}"{}{}{}'.format(
+        schema, table, where, orderby, offset
+    )
 
 
 def format_table_name(row):

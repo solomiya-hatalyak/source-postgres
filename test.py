@@ -2,7 +2,7 @@ import mock
 import unittest
 import psycopg2
 import postgres
-from postgres.source import Postgres
+from postgres.source import Postgres, get_query
 from panoply import PanoplyException
 
 OPTIONS = {
@@ -84,7 +84,8 @@ class TestPostgres(unittest.TestCase):
         inst.read()
 
         q = ('DECLARE cur CURSOR FOR '
-             'SELECT * FROM "schema"."foo" WHERE inckey > \'incval\'')
+             'SELECT * FROM "schema"."foo" WHERE inckey > \'incval\' '
+             'ORDER BY inckey')
         execute_mock = mock_connect.return_value.cursor.return_value.execute
         execute_mock.assert_has_calls([mock.call(q)], True)
 
@@ -291,18 +292,61 @@ class TestPostgres(unittest.TestCase):
 
         # The self.loaded variable should have been reset to 0 in order to
         # reset the query and start from the begining.
-        self.assertEqual(inst.loaded, 0)
+        self.assertEqual(inst.loaded, 42)
+        self.assertEqual(inst.cursor, None)
 
     @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
     def test_read_retries(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'my_schema.foo_bar'}]
-        mock_connect.side_effect = psycopg2.DatabaseError('TestRetiresError')
+        mock_connect.side_effect = psycopg2.DatabaseError('TestRetriesError')
         with self.assertRaises(psycopg2.DatabaseError):
             inst.read()
 
         self.assertEqual(mock_connect.call_count, postgres.source.MAX_RETRIES)
+
+    def test_query_orderby(self):
+        source = {'inckey': 'inckey', 'incval': 'incval'}
+        offset = 10
+        result = get_query('schema', 'table', source, offset)
+        expected = 'SELECT * FROM "schema"."table" ' \
+                   'WHERE inckey > \'incval\' ORDER BY inckey OFFSET 10'
+
+        self.assertEqual(result, expected)
+
+    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("psycopg2.connect")
+    def test_retry_with_offset(self, mock_connect):
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = [{'value': 'my_schema.foo_bar'}]
+        inst.batch_size = 1
+
+        cursor_execute = mock_connect.return_value.cursor.return_value.execute
+        cursor_execute.side_effect = [
+            lambda *args: None,
+            lambda *args: None,
+            psycopg2.DatabaseError('TestRetriesError'),
+            lambda *args: None,
+            lambda *args: None,
+        ]
+
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.return_value = self.mock_recs
+
+        # First read no error
+        inst.read()
+        # Raise retry error
+        inst.read()
+
+        # Extract mock call arguments
+        args = mock_connect.return_value.cursor.return_value\
+            .execute.call_args_list
+        args = [r[0] for r, _ in args]
+        args = filter(lambda x: 'DECLARE' in x, args)
+
+        # Second DECLARATION of cursor should use offset
+        self.assertTrue('OFFSET 3' in args[1])
 
 
 if __name__ == "__main__":
