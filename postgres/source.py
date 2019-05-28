@@ -1,9 +1,10 @@
-import sys
+import backoff
 import panoply
-import uuid
 import psycopg2
 import psycopg2.extras
-import backoff
+import sys
+import uuid
+
 
 DEST = '{__tablename}'
 BATCH_SIZE = 5000
