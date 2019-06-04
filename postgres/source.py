@@ -4,6 +4,8 @@ import psycopg2
 import psycopg2.extras
 import sys
 import uuid
+from copy import copy
+from keystrategy import KEY_STRATEGY
 
 
 DEST = '{__tablename}'
@@ -72,7 +74,13 @@ class Postgres(panoply.DataSource):
             state = self.saved_state.get("%s.%s" % (schema, table))
             if state:
                 self.loaded = state
-            q = get_query(schema, table, self.source, self.loaded)
+            keys = self.get_keys(table)
+
+            if not keys:
+                # Select first column if no pk, indexes found
+                keys = self.get_columns(table)[:1]
+
+            q = get_query(schema, table, self.source, keys, None)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
@@ -138,11 +146,11 @@ class Postgres(panoply.DataSource):
         self.cursor = None
 
     def get_tables(self):
-        '''get the list of tables from the source'''
-        query = '''
+        """get the list of tables from the source"""
+        query = """
             SELECT * FROM information_schema.tables
             WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
-        '''
+        """
 
         self.conn, self.cursor = connect(self.source)
         self.execute(query)
@@ -151,6 +159,38 @@ class Postgres(panoply.DataSource):
         self.close()
 
         return result
+
+    def get_keys(self, table):
+        sql = """
+            SELECT a.attname,
+                   format_type(a.atttypid, a.atttypmod) as datatype,
+                   i.indnatts,
+                   i.indisunique,
+                   i.indisprimary
+            FROM   pg_index i
+                   JOIN   pg_attribute a ON a.attrelid = i.indrelid
+                   AND a.attnum = ANY(i.indkey)
+            WHERE  i.indrelid = '{}'::regclass
+            """
+        sql = sql.format(table)
+        self.execute(sql)
+
+        return self.cursor.fetchall()
+
+    def get_columns(self, table):
+        sql = """
+            SELECT a.attname,
+                    a.attrelid::regclass,
+                   format_type(a.atttypid, a.atttypmod) AS data_type
+            FROM pg_attribute as a
+            WHERE a.attrelid = '{}'::regclass
+            and a.attnum > 0;
+        """
+
+        sql = sql.format(table)
+        self.execute(sql)
+
+        return self.cursor.fetchall()
 
     def _report_state(self, params, loaded):
         table_name = '%(__schemaname)s.%(__tablename)s' % params
@@ -186,14 +226,22 @@ def connect(source):
     return conn, cur
 
 
-def get_query(schema, table, src, state=None):
-    '''return a SELECT query using properties from the source'''
+def get_query(schema, table, src, keys=None, state=None):
+    """return a SELECT query using properties from the source"""
     offset = ''
     where = ''
     orderby = ''
-    if src.get('inckey') and src.get('incval'):
-        where = " WHERE {} > '{}'".format(src.get('inckey'), src.get('incval'))
-        orderby = " ORDER BY {}".format(src.get('inckey'))
+
+    if keys:
+        keys = key_strategy(keys)
+        keys = [key.get('attname') for key in keys]
+        orderby = " ORDER BY {}".format(','.join(keys))
+
+    # TODO refactor
+    # if src.get('inckey') and src.get('incval'):
+    #     where = " WHERE {} > '{}'".format(src.get('inckey'),
+    # src.get('incval'))
+    #     orderby = " ORDER BY {}".format(src.get('inckey'))
 
     if state:
         offset = " OFFSET %s" % state
@@ -204,7 +252,7 @@ def get_query(schema, table, src, state=None):
 
 
 def format_table_name(row):
-    '''format the table name with schema (and type if applicable)'''
+    """format the table name with schema (and type if applicable)"""
 
     # value should include the schema of the tables as there might be tables
     # with the same name in different schemas
@@ -216,3 +264,15 @@ def format_table_name(row):
         name += ' (VIEW)'
 
     return {'name': name, 'value': value}
+
+
+def key_strategy(keys):
+    keys_copy = copy(keys)
+
+    for strategy in KEY_STRATEGY:
+        results = strategy(keys_copy)
+
+        if results:
+            return results
+
+    return keys

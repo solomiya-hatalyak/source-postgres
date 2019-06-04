@@ -2,7 +2,7 @@ import mock
 import unittest
 import psycopg2
 import postgres
-from postgres.source import Postgres, get_query
+from postgres.source import Postgres, connect, get_query
 from panoply import PanoplyException
 
 OPTIONS = {
@@ -347,6 +347,133 @@ class TestPostgres(unittest.TestCase):
 
         # Second DECLARATION of cursor should use offset
         self.assertTrue('OFFSET 3' in args[1])
+
+    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("psycopg2.connect")
+    def test_query_with_primary_keys(self, mock_connect):
+        inst = Postgres(self.source, OPTIONS)
+        inst.conn, inst.cursor = connect(self.source)
+
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.return_value = [
+            {'attname': 'pk1', 'indisunique': True, 'indisprimary': True},
+            {'attname': 'pk2', 'indisunique': True, 'indisprimary': True},
+            {'attname': 'pk2', 'indisunique': True, 'indisprimary': False},
+        ]
+
+        schema = 'public'
+        table = 'test'
+        source = {}
+        keys = inst.get_keys(table)
+        state = None
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ORDER BY pk1,pk2'
+
+        self.assertEqual(result, expected)
+
+    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("psycopg2.connect")
+    def test_query_with_unique_keys(self, mock_connect):
+        inst = Postgres(self.source, OPTIONS)
+        inst.conn, inst.cursor = connect(self.source)
+
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.return_value = [
+            {
+                'attname': 'idx1',
+                'indisunique': True,
+                'indisprimary': False,
+                'indnatts': 2,
+                'indexrelid': 'idx12'
+            },
+            {
+                'attname': 'idx2',
+                'indisunique': True,
+                'indisprimary': False,
+                'indnatts': 2,
+                'indexrelid': 'idx12'
+            },
+            {
+                'attname': 'idx3',
+                'indisunique': True,
+                'indisprimary': False,
+                'indnatts': 1,
+                'indexrelid': 'idx3123'
+            },
+        ]
+
+        schema = 'public'
+        table = 'test'
+        source = {}
+        keys = inst.get_keys(table)
+        state = None
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ORDER BY idx1,idx2'
+
+        self.assertEqual(result, expected)
+
+    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("psycopg2.connect")
+    def test_query_with_non_unique_keys(self, mock_connect):
+        inst = Postgres(self.source, OPTIONS)
+        inst.conn, inst.cursor = connect(self.source)
+
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.return_value = [
+            {
+                'attname': 'idx3',
+                'indisunique': False,
+                'indisprimary': False,
+                'indnatts': 1,
+                'indexrelid': 'idx3123'
+            },
+        ]
+
+        schema = 'public'
+        table = 'test'
+        source = {}
+        keys = inst.get_keys(table)
+        state = None
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ORDER BY idx3'
+
+        self.assertEqual(result, expected)
+
+    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("psycopg2.connect")
+    def test_query_with_no_keys(self, mock_connect):
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = [{'value': 'my_schema.foo_bar'}]
+
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.side_effect = [
+            [],
+            [
+                {'attname': 'id', 'data_type': 'integer'},
+                {'attname': 'name', 'data_type': 'text'},
+            ],
+            [],
+        ]
+
+        cursor_execute = mock_connect.return_value.cursor.return_value.execute
+        cursor_execute.return_value = lambda *args: None
+
+        inst.read()
+
+        # Extract mock call arguments
+        args = mock_connect.return_value.cursor.return_value \
+            .execute.call_args_list
+        args = [r[0] for r, _ in args]
+        args = filter(lambda x: 'DECLARE' in x, args)
+
+        expected = 'DECLARE cur ' \
+                   'CURSOR FOR SELECT * FROM "my_schema"."foo_bar" ' \
+                   'ORDER BY id'
+
+        self.assertEqual(args[0], expected)
 
 
 if __name__ == "__main__":
