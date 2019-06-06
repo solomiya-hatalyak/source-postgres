@@ -6,6 +6,7 @@ import sys
 import uuid
 from copy import copy
 from keystrategy import KEY_STRATEGY
+from collections import OrderedDict
 
 
 DEST = '{__tablename}'
@@ -68,6 +69,7 @@ class Postgres(panoply.DataSource):
         self.state_id = None
         self.loaded = 0
         self.saved_state = self.source.get('state', {})
+        self.current_keys = None
 
         # Remove the state object from the source definition
         # since it does not need to be saved on the source.
@@ -92,16 +94,16 @@ class Postgres(panoply.DataSource):
 
         if not self.cursor:
             self.conn, self.cursor = connect(self.source)
-            state = self.saved_state.get("%s.%s" % (schema, table))
-            if state:
-                self.loaded = state
-            keys = self.get_table_metadata(SQL_GET_KEYS, table)
+            state = self.saved_state.get('last_value')
 
-            if not keys:
+            if not self.current_keys:
+                self.current_keys = self.get_table_metadata(SQL_GET_KEYS, table)
+
+            if not self.current_keys:
                 # Select first column if no pk, indexes found
-                keys = self.get_table_metadata(SQL_GET_COLUMNS, table)[:1]
+                self.current_keys = self.get_table_metadata(SQL_GET_COLUMNS, table)[:1]
 
-            q = get_query(schema, table, self.source, keys, None)
+            q = get_query(schema, table, self.source, self.current_keys, state)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
@@ -127,7 +129,8 @@ class Postgres(panoply.DataSource):
             self.index += 1
             self.loaded = 0
         else:
-            self._report_state(internals, self.loaded)
+            last_row = result[-1]
+            self._report_state(internals, self.loaded, last_row)
 
         return result
 
@@ -142,7 +145,7 @@ class Postgres(panoply.DataSource):
 
             # Since we got an error, it will trigger backoff expo
             # We want the source to continue where it left off
-            self.reset(reset_offset=False)
+            self.reset()
             print('Raise error {}'.format(e.message))
             raise e
         self.log("DONE", query)
@@ -158,11 +161,10 @@ class Postgres(panoply.DataSource):
             self.conn.rollback()
             self.conn.close()
 
-        self.reset(reset_offset=True)
+        self.reset()
 
-    def reset(self, reset_offset=True):
-        if reset_offset:
-            self.loaded = 0
+    def reset(self):
+        self.loaded = 0
         self.conn = None
         self.cursor = None
 
@@ -181,15 +183,22 @@ class Postgres(panoply.DataSource):
 
         return result
 
-    def get_table_metadata(self, sql,table):
+    def get_table_metadata(self, sql, table):
         sql = sql.format(table)
         self.execute(sql)
 
         return self.cursor.fetchall()
 
-    def _report_state(self, params, loaded):
+    def _report_state(self, params, loaded, last_row):
         table_name = '%(__schemaname)s.%(__tablename)s' % params
-        self.state(self.state_id, {table_name: loaded})
+        keys = map(lambda x: x.get('attname'), self.current_keys)
+        last_value = {key: last_row.get(key) for key in keys}
+        last_value = OrderedDict(last_value)
+        self.saved_state = {table_name: loaded, 'last_value': last_value}
+        self.state(
+            self.state_id,
+            {table_name: loaded, 'last_value': last_value}
+        )
 
 
 def connect(source):
@@ -221,14 +230,13 @@ def connect(source):
     return conn, cur
 
 
-def get_query(schema, table, src, keys=None, state=None):
+def get_query(schema, table, src, keys, state=None):
     """return a SELECT query using properties from the source"""
     offset = ''
     where = ''
     orderby = ''
     inckey = src.get('inckey')
     incval = src.get('incval')
-
     if keys:
         keys = key_strategy(keys)
         keys = [key.get('attname') for key in keys]
@@ -239,15 +247,15 @@ def get_query(schema, table, src, keys=None, state=None):
         orderby = " ORDER BY {}".format(','.join(keys))
 
     if state:
+
         multi_column_index = len(state)
         where = "{} >= {}"
 
-        if multi_column_index:
-            where = '({}) >= ()'
-
+        if multi_column_index > 1:
+            where = '({}) >= ({})'
         where = where.format(
             ','.join(state.keys()),
-            ','.join(map(lambda x: '{}'.format(x), state.values()))
+            ','.join(map(lambda x: "'{}'".format(x), state.values()))
         )
 
     if (inckey and incval) and (inckey not in where):
@@ -257,9 +265,6 @@ def get_query(schema, table, src, keys=None, state=None):
 
     if where:
         where = ' WHERE {}'.format(where)
-
-    if state:
-        offset = " OFFSET %s" % state
 
     return 'SELECT * FROM "{}"."{}"{}{}{}'.format(
         schema, table, where, orderby, offset

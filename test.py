@@ -2,6 +2,7 @@ import mock
 import unittest
 import psycopg2
 import postgres
+from collections import OrderedDict
 from postgres.source import (
     Postgres,
     connect,
@@ -14,6 +15,12 @@ from panoply import PanoplyException
 OPTIONS = {
     "logger": lambda *msgs: None,  # no-op logger
 }
+
+
+def mock_table_metadata(*args):
+    if args[0] == SQL_GET_COLUMNS:
+        return [{'attname': 'id'}]
+    return []
 
 
 class TestPostgres(unittest.TestCase):
@@ -83,7 +90,8 @@ class TestPostgres(unittest.TestCase):
             self.assertEqual(rows[x]['__tablename'], 'foo_bar')
             self.assertEqual(rows[x]['__schemaname'], 'my_schema')
 
-    @mock.patch.object(Postgres, 'get_table_metadata', return_value=[])
+    @mock.patch.object(Postgres, 'get_table_metadata',
+                       side_effect=mock_table_metadata)
     @mock.patch("psycopg2.connect")
     def test_incremental(self, mock_connect, _):
         inst = Postgres(self.source, OPTIONS)
@@ -91,8 +99,8 @@ class TestPostgres(unittest.TestCase):
         inst.read()
 
         q = ('DECLARE cur CURSOR FOR '
-             'SELECT * FROM "schema"."foo" WHERE inckey > \'incval\' '
-             'ORDER BY inckey')
+             'SELECT * FROM "schema"."foo" WHERE inckey >= \'incval\' '
+             'ORDER BY id,inckey')
         execute_mock = mock_connect.return_value.cursor.return_value.execute
         execute_mock.assert_has_calls([mock.call(q)], True)
 
@@ -197,9 +205,11 @@ class TestPostgres(unittest.TestCase):
 
     # Make sure that the state is reported and that the
     # output data contains a key __state
+    @mock.patch.object(Postgres, 'get_table_metadata',
+                       side_effect=mock_table_metadata)
     @mock.patch("postgres.source.Postgres.state")
     @mock.patch("psycopg2.connect")
-    def test_reports_state(self, mock_connect, mock_state):
+    def test_reports_state(self, mock_connect, mock_state, _):
         '''before returning a batch of data, the sources state should be
         reported as well as having the state ID appended to each data object'''
 
@@ -212,7 +222,10 @@ class TestPostgres(unittest.TestCase):
 
         rows = inst.read()
         state_id = rows[0]['__state']
-        state_obj = dict([(table_name, len(self.mock_recs))])
+        state_obj = dict([
+            (table_name, len(self.mock_recs)),
+            ('last_value', {'id': 3})
+        ])
 
         msg = 'State ID is not the same in all rows!'
         for row in rows:
@@ -241,26 +254,32 @@ class TestPostgres(unittest.TestCase):
         # State function was called with relevant table name and row count
         mock_state.assert_not_called()
 
+    @mock.patch.object(Postgres, 'get_table_metadata',
+                       side_effect=mock_table_metadata)
     @mock.patch("postgres.source.Postgres.execute")
     @mock.patch("psycopg2.connect")
-    def test_recover_from_state(self, mock_connect, mock_execute):
-        ''' continues to read a table from the saved state '''
+    def test_recover_from_state(self, mock_connect, mock_execute, _):
+        """continues to read a table from the saved state"""
 
         table_offset = 100
+
         self.source['state'] = {
-            'my_schema.foo_bar': table_offset
+            'my_schema.foo_bar': table_offset,
+            'last_value': {'id': 100}
         }
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'my_schema.foo_bar'}]
         cursor_return_value = mock_connect.return_value.cursor.return_value
-        cursor_return_value.fetchall.return_value = self.mock_recs
+        cursor_return_value.fetchall.return_value = [
+            {'id': 101},
+            {'id': 102},
+            {'id': 103}
+        ]
 
         inst.read()
         first_query = mock_execute.call_args_list[0][0][0]
-        # The query should use `OFFSET` to skip already collected data
-        self.assertTrue(first_query.endswith('OFFSET %s' % table_offset))
-        # Three records were returned so the loaded count should be OFFSET + 3
-        self.assertEqual(inst.loaded, table_offset + len(self.mock_recs))
+
+        self.assertTrue("id >= '100'" in first_query)
 
     def test_remove_state_from_source(self):
         ''' once extracted, the state object is removed from the source '''
@@ -296,13 +315,12 @@ class TestPostgres(unittest.TestCase):
         mock_cursor = mock.Mock()
         mock_cursor.execute.side_effect = psycopg2.DatabaseError('oh noes!')
         inst.cursor = mock_cursor
-        inst.loaded = 42
         with self.assertRaises(psycopg2.DatabaseError):
             inst.execute('SELECT 1')
 
         # The self.loaded variable should have been reset to 0 in order to
         # reset the query and start from the begining.
-        self.assertEqual(inst.loaded, 42)
+        self.assertEqual(inst.loaded, 0)
         self.assertEqual(inst.cursor, None)
 
     @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
@@ -316,17 +334,227 @@ class TestPostgres(unittest.TestCase):
 
         self.assertEqual(mock_connect.call_count, postgres.source.MAX_RETRIES)
 
-    def test_query_orderby(self):
-        source = {'inckey': 'inckey', 'incval': 'incval'}
-        state = {
-            'pk1': 2
-        }
+    def test_get_query_without_state_and_incremental(self):
+        source = {}
+        schema = 'public'
+        table = 'test'
         keys = [
-            {'attname': 'pk1', 'indisunique': True, 'indisprimary': True},
+            {
+                'attname': 'pk1',
+                'indisunique': True,
+                'indisprimary': True
+            }
         ]
-        result = get_query('schema', 'table', source, keys, state)
-        expected = 'SELECT * FROM "schema"."table" ' \
-                   'WHERE inckey >= \'incval\' ORDER BY inckey, pk1'
+        state = {}
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ORDER BY pk1'
+
+        self.assertEqual(result, expected)
+
+    def test_orderby_without_incremental(self):
+        source = {}
+        schema = 'public'
+        table = 'test'
+        keys = [
+            {
+                'attname': 'pk1',
+                'indisunique': True,
+                'indisprimary': True
+            }
+        ]
+        state = {}
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ORDER BY pk1'
+
+        self.assertEqual(result, expected)
+
+    def test_orderby_with_incremental(self):
+        source = {'inckey': 'pk3'}
+        schema = 'public'
+        table = 'test'
+        keys = [
+            {
+                'attname': 'pk1',
+                'indisunique': True,
+                'indisprimary': True
+            },
+            {
+                'attname': 'pk2',
+                'indisunique': True,
+                'indisprimary': True
+            }
+        ]
+        state = {}
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ORDER BY pk1,pk2,pk3'
+
+        self.assertEqual(result, expected)
+
+    def test_orderby_with_incremental(self):
+        source = {'inckey': 'pk3'}
+        schema = 'public'
+        table = 'test'
+        keys = [
+            {
+                'attname': 'pk1',
+                'indisunique': True,
+                'indisprimary': True
+            },
+            {
+                'attname': 'pk2',
+                'indisunique': True,
+                'indisprimary': True
+            }
+        ]
+        state = {}
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ORDER BY pk1,pk2,pk3'
+
+        self.assertEqual(result, expected)
+
+    def test_orderby_with_incremental_in_keys(self):
+        source = {'inckey': 'pk2'}
+        schema = 'public'
+        table = 'test'
+        keys = [
+            {
+                'attname': 'pk1',
+                'indisunique': True,
+                'indisprimary': True
+            },
+            {
+                'attname': 'pk2',
+                'indisunique': True,
+                'indisprimary': True
+            }
+        ]
+        state = {}
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ORDER BY pk1,pk2'
+
+        self.assertEqual(result, expected)
+
+    def test_where_without_state_and_incremental(self):
+        source = {}
+        schema = 'public'
+        table = 'test'
+        keys = [
+            {
+                'attname': 'pk1',
+                'indisunique': True,
+                'indisprimary': True
+            },
+            {
+                'attname': 'pk2',
+                'indisunique': True,
+                'indisprimary': True
+            }
+        ]
+        state = {}
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ORDER BY pk1,pk2'
+
+        self.assertEqual(result, expected)
+
+    def test_where_without_state_and_with_incremental(self):
+        source = {'inckey': 'id', 'incval': 1}
+        schema = 'public'
+        table = 'test'
+        keys = [
+            {
+                'attname': 'pk1',
+                'indisunique': True,
+                'indisprimary': True
+            },
+            {
+                'attname': 'pk2',
+                'indisunique': True,
+                'indisprimary': True
+            }
+        ]
+        state = {}
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" WHERE id >= \'1\' ' \
+                   'ORDER BY pk1,pk2,id'
+
+        self.assertEqual(result, expected)
+
+    def test_where_with_state_and_without_incremental(self):
+        source = {}
+        schema = 'public'
+        table = 'test'
+        keys = [
+            {
+                'attname': 'pk1',
+                'indisunique': True,
+                'indisprimary': True
+            },
+            {
+                'attname': 'pk2',
+                'indisunique': True,
+                'indisprimary': True
+            }
+        ]
+        state = OrderedDict([
+            ('pk1', '1'),
+            ('pk2', '1994-09-16')
+        ])
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ' \
+                   'WHERE (pk1,pk2) >= (\'1\',\'1994-09-16\') '\
+                   'ORDER BY pk1,pk2'
+
+        self.assertEqual(result, expected)
+
+    def test_where_with_single_column(self):
+        source = {}
+        schema = 'public'
+        table = 'test'
+        keys = [
+            {
+                'attname': 'pk1',
+                'indisunique': True,
+                'indisprimary': True
+            },
+        ]
+        state = OrderedDict([
+            ('pk1', '1'),
+        ])
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ' \
+                   'WHERE pk1 >= \'1\' ' \
+                   'ORDER BY pk1'
+
+        self.assertEqual(result, expected)
+
+    def test_where_with_state_and_incremental(self):
+        source = {'inckey': 'id', 'incval': 2}
+        schema = 'public'
+        table = 'test'
+        keys = [
+            {
+                'attname': 'pk1',
+                'indisunique': True,
+                'indisprimary': True
+            },
+        ]
+        state = OrderedDict([
+            ('pk1', '1'),
+        ])
+
+        result = get_query(schema, table, source, keys, state)
+        expected = 'SELECT * FROM "public"."test" ' \
+                   'WHERE pk1 >= \'1\' AND id >= \'2\' ' \
+                   'ORDER BY pk1,id'
 
         self.assertEqual(result, expected)
 
