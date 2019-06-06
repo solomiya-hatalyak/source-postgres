@@ -2,7 +2,13 @@ import mock
 import unittest
 import psycopg2
 import postgres
-from postgres.source import Postgres, connect, get_query
+from postgres.source import (
+    Postgres,
+    connect,
+    get_query,
+    SQL_GET_KEYS,
+    SQL_GET_COLUMNS
+)
 from panoply import PanoplyException
 
 OPTIONS = {
@@ -77,8 +83,9 @@ class TestPostgres(unittest.TestCase):
             self.assertEqual(rows[x]['__tablename'], 'foo_bar')
             self.assertEqual(rows[x]['__schemaname'], 'my_schema')
 
+    @mock.patch.object(Postgres, 'get_table_metadata', return_value=[])
     @mock.patch("psycopg2.connect")
-    def test_incremental(self, mock_connect):
+    def test_incremental(self, mock_connect, _):
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'schema.foo'}]
         inst.read()
@@ -89,10 +96,11 @@ class TestPostgres(unittest.TestCase):
         execute_mock = mock_connect.return_value.cursor.return_value.execute
         execute_mock.assert_has_calls([mock.call(q)], True)
 
+    @mock.patch.object(Postgres, 'get_table_metadata', return_value=[])
     @mock.patch("psycopg2.connect")
-    def test_schema_name(self, mock_connect):
-        '''Test schema name is used when queries and that both schema and table
-        names are wrapped in enclosing quotes'''
+    def test_schema_name(self, mock_connect, _):
+        """Test schema name is used when queries and that both schema and table
+        names are wrapped in enclosing quotes"""
 
         source = {
             "addr": "test.database.name/foobar",
@@ -214,11 +222,12 @@ class TestPostgres(unittest.TestCase):
         mock_state.assert_called_with(state_id, state_obj)
 
     # Make sure that no state is reported if no data is returned
+    @mock.patch.object(Postgres, 'get_table_metadata', return_value=[])
     @mock.patch("postgres.source.Postgres.state")
     @mock.patch("psycopg2.connect")
-    def test_no_state_for_empty_results(self, mock_connect, mock_state):
-        '''before returning a batch of data, the sources state should be
-        reported as well as having the state ID appended to each data object'''
+    def test_no_state_for_empty_results(self, mock_connect, mock_state, _):
+        """before returning a batch of data, the sources state should be
+        reported as well as having the state ID appended to each data object"""
 
         inst = Postgres(self.source, OPTIONS)
         table_name = 'my_schema.foo_bar'
@@ -265,9 +274,10 @@ class TestPostgres(unittest.TestCase):
         # No state key should be inside the source definition
         self.assertIsNone(inst.source.get('state', None))
 
+    @mock.patch.object(Postgres, 'get_table_metadata', return_value=[])
     @mock.patch("postgres.source.Postgres.execute")
     @mock.patch("psycopg2.connect")
-    def test_batch_size(self, mock_connect, mock_execute):
+    def test_batch_size(self, mock_connect, mock_execute, _):
         customBatchSize = 42
         self.source['__batchSize'] = customBatchSize
         inst = Postgres(self.source, OPTIONS)
@@ -308,10 +318,15 @@ class TestPostgres(unittest.TestCase):
 
     def test_query_orderby(self):
         source = {'inckey': 'inckey', 'incval': 'incval'}
-        offset = 10
-        result = get_query('schema', 'table', source, offset)
+        state = {
+            'pk1': 2
+        }
+        keys = [
+            {'attname': 'pk1', 'indisunique': True, 'indisprimary': True},
+        ]
+        result = get_query('schema', 'table', source, keys, state)
         expected = 'SELECT * FROM "schema"."table" ' \
-                   'WHERE inckey > \'incval\' ORDER BY inckey OFFSET 10'
+                   'WHERE inckey >= \'incval\' ORDER BY inckey, pk1'
 
         self.assertEqual(result, expected)
 
@@ -364,7 +379,7 @@ class TestPostgres(unittest.TestCase):
         schema = 'public'
         table = 'test'
         source = {}
-        keys = inst.get_keys(table)
+        keys = inst.get_table_metadata(SQL_GET_KEYS, table)
         state = None
 
         result = get_query(schema, table, source, keys, state)
@@ -406,7 +421,7 @@ class TestPostgres(unittest.TestCase):
         schema = 'public'
         table = 'test'
         source = {}
-        keys = inst.get_keys(table)
+        keys = inst.get_table_metadata(SQL_GET_KEYS, table)
         state = None
 
         result = get_query(schema, table, source, keys, state)
@@ -434,7 +449,7 @@ class TestPostgres(unittest.TestCase):
         schema = 'public'
         table = 'test'
         source = {}
-        keys = inst.get_keys(table)
+        keys = inst.get_table_metadata(SQL_GET_KEYS, table)
         state = None
 
         result = get_query(schema, table, source, keys, state)
@@ -471,7 +486,8 @@ class TestPostgres(unittest.TestCase):
 
         expected = 'DECLARE cur ' \
                    'CURSOR FOR SELECT * FROM "my_schema"."foo_bar" ' \
-                   'ORDER BY id'
+                   "WHERE inckey >= 'incval' " \
+                   'ORDER BY id,inckey'
 
         self.assertEqual(args[0], expected)
 

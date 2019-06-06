@@ -14,6 +14,27 @@ CONNECT_TIMEOUT = 15  # seconds
 MAX_RETRIES = 5
 RETRY_TIMEOUT = 2
 
+SQL_GET_KEYS = """
+            SELECT a.attname,
+                   format_type(a.atttypid, a.atttypmod) as datatype,
+                   i.indnatts,
+                   i.indisunique,
+                   i.indisprimary
+            FROM   pg_index i
+                   JOIN   pg_attribute a ON a.attrelid = i.indrelid
+                   AND a.attnum = ANY(i.indkey)
+            WHERE  i.indrelid = '{}'::regclass
+            """
+
+SQL_GET_COLUMNS = """
+            SELECT a.attname,
+                    a.attrelid::regclass,
+                   format_type(a.atttypid, a.atttypmod) AS data_type
+            FROM pg_attribute as a
+            WHERE a.attrelid = '{}'::regclass
+            and a.attnum > 0;
+            """
+
 
 def _log_backoff(details):
     err = sys.exc_info()[1]
@@ -74,11 +95,11 @@ class Postgres(panoply.DataSource):
             state = self.saved_state.get("%s.%s" % (schema, table))
             if state:
                 self.loaded = state
-            keys = self.get_keys(table)
+            keys = self.get_table_metadata(SQL_GET_KEYS, table)
 
             if not keys:
                 # Select first column if no pk, indexes found
-                keys = self.get_columns(table)[:1]
+                keys = self.get_table_metadata(SQL_GET_COLUMNS, table)[:1]
 
             q = get_query(schema, table, self.source, keys, None)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
@@ -160,33 +181,7 @@ class Postgres(panoply.DataSource):
 
         return result
 
-    def get_keys(self, table):
-        sql = """
-            SELECT a.attname,
-                   format_type(a.atttypid, a.atttypmod) as datatype,
-                   i.indnatts,
-                   i.indisunique,
-                   i.indisprimary
-            FROM   pg_index i
-                   JOIN   pg_attribute a ON a.attrelid = i.indrelid
-                   AND a.attnum = ANY(i.indkey)
-            WHERE  i.indrelid = '{}'::regclass
-            """
-        sql = sql.format(table)
-        self.execute(sql)
-
-        return self.cursor.fetchall()
-
-    def get_columns(self, table):
-        sql = """
-            SELECT a.attname,
-                    a.attrelid::regclass,
-                   format_type(a.atttypid, a.atttypmod) AS data_type
-            FROM pg_attribute as a
-            WHERE a.attrelid = '{}'::regclass
-            and a.attnum > 0;
-        """
-
+    def get_table_metadata(self, sql,table):
         sql = sql.format(table)
         self.execute(sql)
 
@@ -231,17 +226,37 @@ def get_query(schema, table, src, keys=None, state=None):
     offset = ''
     where = ''
     orderby = ''
+    inckey = src.get('inckey')
+    incval = src.get('incval')
 
     if keys:
         keys = key_strategy(keys)
         keys = [key.get('attname') for key in keys]
+
+        if inckey and inckey not in keys:
+            keys.append(inckey)
+
         orderby = " ORDER BY {}".format(','.join(keys))
 
-    # TODO refactor
-    # if src.get('inckey') and src.get('incval'):
-    #     where = " WHERE {} > '{}'".format(src.get('inckey'),
-    # src.get('incval'))
-    #     orderby = " ORDER BY {}".format(src.get('inckey'))
+    if state:
+        multi_column_index = len(state)
+        where = "{} >= {}"
+
+        if multi_column_index:
+            where = '({}) >= ()'
+
+        where = where.format(
+            ','.join(state.keys()),
+            ','.join(map(lambda x: '{}'.format(x), state.values()))
+        )
+
+    if (inckey and incval) and (inckey not in where):
+        if where:
+            where = '{} AND '.format(where)
+        where = "{}{} >= '{}'".format(where, inckey, incval)
+
+    if where:
+        where = ' WHERE {}'.format(where)
 
     if state:
         offset = " OFFSET %s" % state
