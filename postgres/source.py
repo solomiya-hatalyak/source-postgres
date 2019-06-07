@@ -4,7 +4,7 @@ import psycopg2
 import psycopg2.extras
 import sys
 import uuid
-from copy import copy
+from copy import copy, deepcopy
 from keystrategy import KEY_STRATEGY
 from collections import OrderedDict
 
@@ -71,6 +71,8 @@ class Postgres(panoply.DataSource):
         self.saved_state = self.source.get('state', {})
         self.current_keys = None
 
+        self.index = self.saved_state.get('last_index', 0)
+
         # Remove the state object from the source definition
         # since it does not need to be saved on the source.
         self.source.pop('state', None)
@@ -94,7 +96,7 @@ class Postgres(panoply.DataSource):
 
         if not self.cursor:
             self.conn, self.cursor = connect(self.source)
-            state = self.saved_state.get('last_value')
+            state = self.saved_state.get('last_value', None)
 
             if not self.current_keys:
                 self.current_keys = self.get_table_metadata(SQL_GET_KEYS, table)
@@ -102,7 +104,6 @@ class Postgres(panoply.DataSource):
             if not self.current_keys:
                 # Select first column if no pk, indexes found
                 self.current_keys = self.get_table_metadata(SQL_GET_COLUMNS, table)[:1]
-
             q = get_query(schema, table, self.source, self.current_keys, state)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
@@ -128,9 +129,11 @@ class Postgres(panoply.DataSource):
             self.close()
             self.index += 1
             self.loaded = 0
+            self.current_keys = None
+            self.saved_state = {}
         else:
             last_row = result[-1]
-            self._report_state(internals, self.loaded, last_row)
+            self._report_state(self.index, last_row)
 
         return result
 
@@ -189,20 +192,22 @@ class Postgres(panoply.DataSource):
 
         return self.cursor.fetchall()
 
-    def _report_state(self, params, loaded, last_row):
-        table_name = '%(__schemaname)s.%(__tablename)s' % params
+    def _report_state(self, current_index, last_row):
         keys = map(lambda x: x.get('attname'), self.current_keys)
-        last_value = {key: last_row.get(key) for key in keys}
+        last_value = [(key, last_row.get(key)) for key in keys]
         last_value = OrderedDict(last_value)
-        self.saved_state = {table_name: loaded, 'last_value': last_value}
+        self.saved_state = {
+            'last_index': current_index,
+            'last_value': last_value
+        }
         self.state(
             self.state_id,
-            {table_name: loaded, 'last_value': last_value}
+            deepcopy(self.saved_state)
         )
 
 
 def connect(source):
-    '''connect to the DB using properties from the source'''
+    """connect to the DB using properties from the source"""
     host, dbname = source['addr'].rsplit('/', 1)
     port = 5432
     if ':' in host:
@@ -240,7 +245,6 @@ def get_query(schema, table, src, keys, state=None):
     if keys:
         keys = key_strategy(keys)
         keys = [key.get('attname') for key in keys]
-
         if inckey and inckey not in keys:
             keys.append(inckey)
 
