@@ -44,7 +44,7 @@ class TestPostgres(unittest.TestCase):
     # fetches list of tables from database
     @mock.patch("psycopg2.connect")
     def test_get_tables(self, m):
-        '''gets the list of tables from the database'''
+        """gets the list of tables from the database"""
 
         # Notice 'name' here is only for validation of expected result.
         # It is not a field that returns in the actual query results
@@ -190,8 +190,8 @@ class TestPostgres(unittest.TestCase):
     @mock.patch("postgres.source.Postgres.execute")
     @mock.patch("psycopg2.connect")
     def test_read_end_stream(self, mock_connect, mock_execute, mock_metadata):
-        '''reads the entire table from the database and validates that the
-        stream returns None to indicate the end'''
+        """reads the entire table from the database and validates that the
+        stream returns None to indicate the end"""
         # TODO make it read two tables
         tables = [
             {'value': 'public.table1'},
@@ -280,7 +280,6 @@ class TestPostgres(unittest.TestCase):
         end = inst.read()
         self.assertEqual(end, None)
 
-
     # Make sure that the state is reported and that the
     # output data contains a key __state
     @mock.patch.object(Postgres, 'get_table_metadata',
@@ -288,8 +287,8 @@ class TestPostgres(unittest.TestCase):
     @mock.patch("postgres.source.Postgres.state")
     @mock.patch("psycopg2.connect")
     def test_reports_state(self, mock_connect, mock_state, _):
-        '''before returning a batch of data, the sources state should be
-        reported as well as having the state ID appended to each data object'''
+        """before returning a batch of data, the sources state should be
+        reported as well as having the state ID appended to each data object"""
 
         inst = Postgres(self.source, OPTIONS)
         table_name = 'my_schema.foo_bar'

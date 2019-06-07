@@ -99,11 +99,17 @@ class Postgres(panoply.DataSource):
             state = self.saved_state.get('last_value', None)
 
             if not self.current_keys:
-                self.current_keys = self.get_table_metadata(SQL_GET_KEYS, table)
+                self.current_keys = self.get_table_metadata(
+                    SQL_GET_KEYS,
+                    table
+                )
 
             if not self.current_keys:
                 # Select first column if no pk, indexes found
-                self.current_keys = self.get_table_metadata(SQL_GET_COLUMNS, table)[:1]
+                self.current_keys = self.get_table_metadata(
+                    SQL_GET_COLUMNS,
+                    table
+                )[:1]
             q = get_query(schema, table, self.source, self.current_keys, state)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
@@ -154,7 +160,7 @@ class Postgres(panoply.DataSource):
         self.log("DONE", query)
 
     def close(self):
-        '''close the connection, and clear everything'''
+        """close the connection, and clear everything"""
         if self.cursor:
             self.cursor.close()
         if self.conn:
