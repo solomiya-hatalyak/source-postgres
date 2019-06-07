@@ -74,10 +74,12 @@ class TestPostgres(unittest.TestCase):
             self.assertEqual(tables[x]['value'], v)
 
     # read a table from the database
+    @mock.patch.object(Postgres, 'get_table_metadata',
+                       side_effect=mock_table_metadata)
     @mock.patch("psycopg2.connect")
-    def test_read(self, mock_connect):
-        '''reads a table from the database and validates that each row
-        has a __tablename and __schemaname column'''
+    def test_read(self, mock_connect, _):
+        """reads a table from the database and validates that each row
+        has a __tablename and __schemaname column"""
 
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'my_schema.foo_bar'}]
@@ -184,24 +186,100 @@ class TestPostgres(unittest.TestCase):
         )
 
     # Make sure the stream ends properly
+    @mock.patch.object(Postgres, 'get_table_metadata')
+    @mock.patch("postgres.source.Postgres.execute")
     @mock.patch("psycopg2.connect")
-    def test_read_end_stream(self, mock_connect):
+    def test_read_end_stream(self, mock_connect, mock_execute, mock_metadata):
         '''reads the entire table from the database and validates that the
         stream returns None to indicate the end'''
+        # TODO make it read two tables
+        tables = [
+            {'value': 'public.table1'},
+            {'value': 'public.table2'},
+            {'value': 'public.table3'},
+        ]
+
+        mock_metadata.side_effect = [
+            [{'attname': 'col1'}],
+            [{'attname': 'col2'}],
+            [{'attname': 'col3'}],
+
+        ]
 
         inst = Postgres(self.source, OPTIONS)
-        inst.tables = [{'value': 'my_schema.foo_bar'}]
-        result_order = [self.mock_recs, []]
+        inst.tables = tables
+        result_order = [
+            self.mock_recs,
+            [],
+            self.mock_recs,
+            [],
+            self.mock_recs,
+            []
+        ]
+
         cursor_return_value = mock_connect.return_value.cursor.return_value
         cursor_return_value.fetchall.side_effect = result_order
 
-        rows = inst.read()
-        self.assertEqual(len(rows), len(self.mock_recs))
+        # First call to read
+        result = inst.read()
+        self.assertEqual(len(result), len(self.mock_recs))
+        query = mock_execute.call_args_list[0][0][0]
+        expected_query = 'FROM "public"."table1" ' \
+                         'WHERE inckey >= \'incval\' '\
+                         'ORDER BY col1,inckey'
+        self.assertTrue(expected_query in query)
+        query = mock_execute.call_args_list[1][0][0]
+        expected_query = 'FETCH FORWARD'
+        self.assertTrue(expected_query in query)
 
-        empty = inst.read()
-        self.assertEqual(empty, [])
+        # Second call to read
+        result = inst.read()
+        self.assertEqual(result, [])
+        query = mock_execute.call_args_list[2][0][0]
+        expected_query = 'FETCH FORWARD'
+        self.assertTrue(expected_query in query)
+
+        # Third call to read
+        result = inst.read()
+        self.assertEqual(len(result), len(self.mock_recs))
+        query = mock_execute.call_args_list[3][0][0]
+        expected_query = 'FROM "public"."table2" ' \
+                         'WHERE inckey >= \'incval\' ' \
+                         'ORDER BY col2,inckey'
+        self.assertTrue(expected_query in query)
+        query = mock_execute.call_args_list[4][0][0]
+        expected_query = 'FETCH FORWARD'
+        self.assertTrue(expected_query in query)
+
+        # Fourth call to read
+        result = inst.read()
+        self.assertEqual(result, [])
+        query = mock_execute.call_args_list[5][0][0]
+        expected_query = 'FETCH FORWARD'
+        self.assertTrue(expected_query in query)
+
+        # Fifth call to read
+        result = inst.read()
+        self.assertEqual(len(result), len(self.mock_recs))
+        query = mock_execute.call_args_list[6][0][0]
+        expected_query = 'FROM "public"."table3" ' \
+                         'WHERE inckey >= \'incval\' ' \
+                         'ORDER BY col3,inckey'
+        self.assertTrue(expected_query in query)
+        query = mock_execute.call_args_list[7][0][0]
+        expected_query = 'FETCH FORWARD'
+        self.assertTrue(expected_query in query)
+
+        # Sixth call to read
+        result = inst.read()
+        self.assertEqual(result, [])
+        query = mock_execute.call_args_list[8][0][0]
+        expected_query = 'FETCH FORWARD'
+        self.assertTrue(expected_query in query)
+
         end = inst.read()
         self.assertEqual(end, None)
+
 
     # Make sure that the state is reported and that the
     # output data contains a key __state
@@ -223,7 +301,7 @@ class TestPostgres(unittest.TestCase):
         rows = inst.read()
         state_id = rows[0]['__state']
         state_obj = dict([
-            (table_name, len(self.mock_recs)),
+            ('last_index', 0),
             ('last_value', {'id': 3})
         ])
 
@@ -261,14 +339,19 @@ class TestPostgres(unittest.TestCase):
     def test_recover_from_state(self, mock_connect, mock_execute, _):
         """continues to read a table from the saved state"""
 
-        table_offset = 100
+        tables = [
+            {'value': 'public.test1'},
+            {'value': 'public.test2'},
+            {'value': 'public.test3'},
+        ]
+        last_index = 1
 
         self.source['state'] = {
-            'my_schema.foo_bar': table_offset,
+            'last_index': last_index,
             'last_value': {'id': 100}
         }
         inst = Postgres(self.source, OPTIONS)
-        inst.tables = [{'value': 'my_schema.foo_bar'}]
+        inst.tables = tables
         cursor_return_value = mock_connect.return_value.cursor.return_value
         cursor_return_value.fetchall.return_value = [
             {'id': 101},
@@ -278,11 +361,11 @@ class TestPostgres(unittest.TestCase):
 
         inst.read()
         first_query = mock_execute.call_args_list[0][0][0]
-
         self.assertTrue("id >= '100'" in first_query)
+        self.assertTrue('FROM "public"."test2"' in first_query)
 
     def test_remove_state_from_source(self):
-        ''' once extracted, the state object is removed from the source '''
+        """ once extracted, the state object is removed from the source """
 
         state = {'my_schema.foo_bar': 1}
         self.source['state'] = state
@@ -558,9 +641,16 @@ class TestPostgres(unittest.TestCase):
 
         self.assertEqual(result, expected)
 
+    @mock.patch.object(Postgres, 'get_table_metadata')
     @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
-    def test_retry_with_offset(self, mock_connect):
+    def test_retry_with_last_values(self, mock_connect, mock_metadata):
+
+        mock_metadata.side_effect = lambda *args: [
+            {'attname': 'col1', 'indisunique': True, 'indisprimary': True},
+            {'attname': 'col2', 'indisunique': True, 'indisprimary': True}
+        ]
+
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'my_schema.foo_bar'}]
         inst.batch_size = 1
@@ -588,8 +678,8 @@ class TestPostgres(unittest.TestCase):
         args = [r[0] for r, _ in args]
         args = filter(lambda x: 'DECLARE' in x, args)
 
-        # Second DECLARATION of cursor should use offset
-        self.assertTrue('OFFSET 3' in args[1])
+        # Second DECLARATION of cursor should start from last row fetched
+        self.assertTrue('WHERE (col1,col2) >= (\'foo3\',\'bar3\')' in args[1])
 
     @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
