@@ -7,6 +7,7 @@ from postgres.source import (
     Postgres,
     connect,
     get_query,
+    key_strategy,
     SQL_GET_KEYS,
     SQL_GET_COLUMNS
 )
@@ -697,6 +698,7 @@ class TestPostgres(unittest.TestCase):
         table = 'test'
         source = {}
         keys = inst.get_table_metadata(SQL_GET_KEYS, table)
+        keys = key_strategy(keys)
         state = None
 
         result = get_query(schema, table, source, keys, state)
@@ -739,6 +741,7 @@ class TestPostgres(unittest.TestCase):
         table = 'test'
         source = {}
         keys = inst.get_table_metadata(SQL_GET_KEYS, table)
+        keys = key_strategy(keys)
         state = None
 
         result = get_query(schema, table, source, keys, state)
@@ -767,6 +770,7 @@ class TestPostgres(unittest.TestCase):
         table = 'test'
         source = {}
         keys = inst.get_table_metadata(SQL_GET_KEYS, table)
+        keys = key_strategy(keys)
         state = None
 
         result = get_query(schema, table, source, keys, state)

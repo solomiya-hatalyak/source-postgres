@@ -110,6 +110,8 @@ class Postgres(panoply.DataSource):
                     SQL_GET_COLUMNS,
                     table
                 )[:1]
+
+            self.current_keys = key_strategy(self.current_keys)
             q = get_query(schema, table, self.source, self.current_keys, state)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
@@ -249,7 +251,6 @@ def get_query(schema, table, src, keys, state=None):
     inckey = src.get('inckey')
     incval = src.get('incval')
     if keys:
-        keys = key_strategy(keys)
         keys = [key.get('attname') for key in keys]
         if inckey and inckey not in keys:
             keys.append(inckey)
