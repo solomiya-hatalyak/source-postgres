@@ -6,6 +6,7 @@ from collections import OrderedDict
 from postgres.source import (
     Postgres,
     connect,
+    get_incremental,
     get_query,
     key_strategy,
     SQL_GET_KEYS,
@@ -930,6 +931,28 @@ class TestPostgres(unittest.TestCase):
                    'ORDER BY id,inckey'
 
         self.assertEqual(args[0], expected)
+
+    def test_get_incremental_key_in_where(self):
+        where = ''
+        inckey = 'inckey'
+        incval = 1
+        max_value = 100
+
+        result = get_incremental(where, inckey, incval, max_value)
+        expected = "(inckey >= '1' AND inckey <= '100')"
+
+        self.assertEqual(result, expected)
+
+    def test_get_incremental_key_not_in_where(self):
+        where = "(inckey, id) >= ('1', '2)"
+        inckey = 'inckey'
+        incval = 1
+        max_value = 100
+
+        result = get_incremental(where, inckey, incval, max_value)
+        expected = "inckey <= '100'"
+
+        self.assertEqual(result, expected)
 
 
 if __name__ == "__main__":

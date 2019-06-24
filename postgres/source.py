@@ -123,7 +123,6 @@ class Postgres(panoply.DataSource):
                                              self.max_value)
 
             q = get_query(**query_opts)
-            print(q)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
@@ -287,8 +286,28 @@ def connect(source):
 
 def get_query(schema, table, inckey, incval, keys, max_value, state=None):
     """return a SELECT query using properties from the source"""
-    offset = ''
     where = ''
+    orderby = get_orderby(keys, inckey)
+
+    if state:
+        where = use_indexes(state)
+
+    if inckey and incval:
+        if where:
+            where = '{} AND '.format(where)
+
+        inc_clause = get_incremental(where, inckey, incval, max_value)
+        where = "{}{}".format(where, inc_clause)
+
+    if where:
+        where = ' WHERE {}'.format(where)
+
+    return 'SELECT * FROM "{}"."{}"{}{}'.format(
+        schema, table, where, orderby
+    )
+
+
+def get_orderby(keys, inckey):
     orderby = ''
     if keys:
         keys = [key.get('attname') for key in keys]
@@ -296,41 +315,35 @@ def get_query(schema, table, inckey, incval, keys, max_value, state=None):
             keys.append(inckey)
 
         orderby = " ORDER BY {}".format(','.join(keys))
+    return orderby
 
-    if state:
 
-        multi_column_index = len(state)
-        where = "{} >= {}"
+def use_indexes(state):
+    multi_column_index = len(state)
+    where = "{} >= {}"
 
-        if multi_column_index > 1:
-            where = '({}) >= ({})'
-        where = where.format(
-            ','.join(state.keys()),
-            ','.join(map(lambda x: "'{}'".format(x), state.values()))
-        )
-
-    if inckey and incval:
-        if where:
-            where = '{} AND '.format(where)
-        if inckey not in where:
-            inc_clause = "{} >= '{}'".format(inckey, incval)
-            if max_value:
-                inc_clause = "({} AND {} <= '{}')".format(
-                    inc_clause,
-                    inckey,
-                    max_value
-                )
-        else:
-            inc_clause = "{} <= '{}'".format(inckey, max_value)
-
-        where = "{}{}".format(where, inc_clause)
-
-    if where:
-        where = ' WHERE {}'.format(where)
-
-    return 'SELECT * FROM "{}"."{}"{}{}{}'.format(
-        schema, table, where, orderby, offset
+    if multi_column_index > 1:
+        where = '({}) >= ({})'
+    where = where.format(
+        ','.join(state.keys()),
+        ','.join(map(lambda x: "'{}'".format(x), state.values()))
     )
+    return where
+
+
+def get_incremental(where, inckey, incval, max_value):
+    if inckey not in where:
+        inc_clause = "{} >= '{}'".format(inckey, incval)
+        if max_value:
+            inc_clause = "({} AND {} <= '{}')".format(
+                inc_clause,
+                inckey,
+                max_value
+            )
+    else:
+        inc_clause = "{} <= '{}'".format(inckey, max_value)
+
+    return inc_clause
 
 
 def format_table_name(row):
