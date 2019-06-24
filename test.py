@@ -374,7 +374,8 @@ class TestPostgres(unittest.TestCase):
 
         inst.read()
         first_query = mock_execute.call_args_list[0][0][0]
-        self.assertTrue("inckey >= 'incval' AND inckey <= '100'" in first_query)
+        self.assertTrue("inckey >= 'incval' AND inckey <= '100'" in
+                        first_query)
         self.assertTrue('FROM "public"."test2"' in first_query)
 
     def test_remove_state_from_source(self):
