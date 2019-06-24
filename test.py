@@ -314,7 +314,7 @@ class TestPostgres(unittest.TestCase):
         state_id = rows[0]['__state']
         state_obj = dict([
             ('last_index', 0),
-            ('last_value', {'id': 3})
+            ('max_value', 100)
         ])
 
         msg = 'State ID is not the same in all rows!'
@@ -361,7 +361,7 @@ class TestPostgres(unittest.TestCase):
 
         self.source['state'] = {
             'last_index': last_index,
-            'last_value': {'id': 100}
+            'max_value': 100
         }
         inst = Postgres(self.source, OPTIONS)
         inst.tables = tables
@@ -374,18 +374,22 @@ class TestPostgres(unittest.TestCase):
 
         inst.read()
         first_query = mock_execute.call_args_list[0][0][0]
-        self.assertTrue("id >= '100'" in first_query)
+        self.assertTrue("inckey >= 'incval' AND inckey <= '100'" in first_query)
         self.assertTrue('FROM "public"."test2"' in first_query)
 
     def test_remove_state_from_source(self):
         """ once extracted, the state object is removed from the source """
-
-        state = {'my_schema.foo_bar': 1}
+        last_index = 3
+        max_value = 100
+        state = {
+            'last_index': last_index,
+            'max_value': max_value
+        }
         self.source['state'] = state
         inst = Postgres(self.source, OPTIONS)
 
-        # State object should have been extracted and saved on the stream
-        self.assertEqual(inst.saved_state, state)
+        self.assertEqual(inst.index, last_index)
+        self.assertEqual(inst.max_value, max_value)
         # No state key should be inside the source definition
         self.assertIsNone(inst.source.get('state', None))
 

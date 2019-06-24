@@ -58,23 +58,24 @@ class Postgres(panoply.DataSource):
     def __init__(self, source, options):
         super(Postgres, self).__init__(source, options)
 
-        self.source['destination'] = self.source.get('destination', DEST)
+        self.source['destination'] = source.get('destination', DEST)
 
-        self.batch_size = self.source.get('__batchSize', BATCH_SIZE)
-        tables = self.source.get('tables', [])
+        self.batch_size = source.get('__batchSize', BATCH_SIZE)
+        tables = source.get('tables', [])
         self.tables = tables[:]
         self.index = 0
         self.conn = None
         self.cursor = None
         self.state_id = None
         self.loaded = 0
-        self.saved_state = self.source.get('state', {})
+        self.saved_state = {}
         self.current_keys = None
-        self.inckey = self.source.get('inckey', '')
-        self.incval = self.source.get('incval', '')
-        self.max_value = None
+        self.inckey = source.get('inckey', '')
+        self.incval = source.get('incval', '')
 
-        self.index = self.saved_state.get('last_index', 0)
+        state = source.get('state', {})
+        self.index = state.get('last_index', 0)
+        self.max_value = state.get('max_value', None)
 
         # Remove the state object from the source definition
         # since it does not need to be saved on the source.
@@ -122,6 +123,7 @@ class Postgres(panoply.DataSource):
                                              self.max_value)
 
             q = get_query(**query_opts)
+            print(q)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
@@ -151,7 +153,8 @@ class Postgres(panoply.DataSource):
             self.max_value = None
         else:
             last_row = result[-1]
-            self._report_state(self.index, last_row)
+            self._save_last_values(last_row)
+            self._report_state(self.index, self.max_value)
 
         return result
 
@@ -236,18 +239,21 @@ class Postgres(panoply.DataSource):
 
         return self.cursor.fetchall()
 
-    def _report_state(self, current_index, last_row):
+    def _save_last_values(self, last_row):
         keys = map(lambda x: x.get('attname'), self.current_keys)
         last_value = [(key, last_row.get(key)) for key in keys]
         last_value = OrderedDict(last_value)
+
         self.saved_state = {
-            'last_index': current_index,
             'last_value': last_value
         }
-        self.state(
-            self.state_id,
-            deepcopy(self.saved_state)
-        )
+
+    def _report_state(self, current_index, max_value):
+        state = {
+            'last_index': current_index,
+            'max_value': max_value
+        }
+        self.state(self.state_id, state)
 
 
 def connect(source):
