@@ -315,7 +315,6 @@ class TestPostgres(unittest.TestCase):
         state_id = rows[0]['__state']
         state_obj = dict([
             ('last_index', 0),
-            ('max_value', 100)
         ])
 
         msg = 'State ID is not the same in all rows!'
@@ -382,16 +381,13 @@ class TestPostgres(unittest.TestCase):
     def test_remove_state_from_source(self):
         """ once extracted, the state object is removed from the source """
         last_index = 3
-        max_value = 100
         state = {
             'last_index': last_index,
-            'max_value': max_value
         }
         self.source['state'] = state
         inst = Postgres(self.source, OPTIONS)
 
         self.assertEqual(inst.index, last_index)
-        self.assertEqual(inst.max_value, max_value)
         # No state key should be inside the source definition
         self.assertIsNone(inst.source.get('state', None))
 

@@ -75,7 +75,7 @@ class Postgres(panoply.DataSource):
 
         state = source.get('state', {})
         self.index = state.get('last_index', 0)
-        self.max_value = state.get('max_value', None)
+        self.max_value = None
 
         # Remove the state object from the source definition
         # since it does not need to be saved on the source.
@@ -153,7 +153,7 @@ class Postgres(panoply.DataSource):
         else:
             last_row = result[-1]
             self._save_last_values(last_row)
-            self._report_state(self.index, self.max_value)
+            self._report_state(self.index)
 
         return result
 
@@ -247,10 +247,9 @@ class Postgres(panoply.DataSource):
             'last_value': last_value
         }
 
-    def _report_state(self, current_index, max_value):
+    def _report_state(self, current_index):
         state = {
-            'last_index': current_index,
-            'max_value': max_value
+            'last_index': current_index
         }
         self.state(self.state_id, state)
 
