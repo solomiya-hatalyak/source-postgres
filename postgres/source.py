@@ -1,15 +1,40 @@
-import sys
+import backoff
 import panoply
-import uuid
 import psycopg2
 import psycopg2.extras
-import backoff
+import sys
+import uuid
+from copy import copy, deepcopy
+from keystrategy import KEY_STRATEGY
+from collections import OrderedDict
+
 
 DEST = '{__tablename}'
 BATCH_SIZE = 5000
 CONNECT_TIMEOUT = 15  # seconds
 MAX_RETRIES = 5
 RETRY_TIMEOUT = 2
+
+SQL_GET_KEYS = """
+            SELECT a.attname,
+                   format_type(a.atttypid, a.atttypmod) as datatype,
+                   i.indnatts,
+                   i.indisunique,
+                   i.indisprimary
+            FROM   pg_index i
+                   JOIN   pg_attribute a ON a.attrelid = i.indrelid
+                   AND a.attnum = ANY(i.indkey)
+            WHERE  i.indrelid = '{}'::regclass
+            """
+
+SQL_GET_COLUMNS = """
+            SELECT a.attname,
+                    a.attrelid::regclass,
+                   format_type(a.atttypid, a.atttypmod) AS data_type
+            FROM pg_attribute as a
+            WHERE a.attrelid = '{}'::regclass
+            and a.attnum > 0;
+            """
 
 
 def _log_backoff(details):
@@ -33,17 +58,24 @@ class Postgres(panoply.DataSource):
     def __init__(self, source, options):
         super(Postgres, self).__init__(source, options)
 
-        self.source['destination'] = self.source.get('destination', DEST)
+        self.source['destination'] = source.get('destination', DEST)
 
-        self.batch_size = self.source.get('__batchSize', BATCH_SIZE)
-        tables = self.source.get('tables', [])
+        self.batch_size = source.get('__batchSize', BATCH_SIZE)
+        tables = source.get('tables', [])
         self.tables = tables[:]
         self.index = 0
         self.conn = None
         self.cursor = None
         self.state_id = None
         self.loaded = 0
-        self.saved_state = self.source.get('state', {})
+        self.saved_state = {}
+        self.current_keys = None
+        self.inckey = source.get('inckey', '')
+        self.incval = source.get('incval', '')
+
+        state = source.get('state', {})
+        self.index = state.get('last_index', 0)
+        self.max_value = None
 
         # Remove the state object from the source definition
         # since it does not need to be saved on the source.
@@ -68,9 +100,29 @@ class Postgres(panoply.DataSource):
 
         if not self.cursor:
             self.conn, self.cursor = connect(self.source)
-            state = self.saved_state.get("%s.%s" % (schema, table))
-            self.loaded = state if state is not None else 0
-            q = get_query(schema, table, self.source, state)
+            state = self.saved_state.get('last_value', None)
+
+            if not self.current_keys:
+                self.current_keys = self.get_table_metadata(
+                    SQL_GET_KEYS,
+                    table
+                )
+
+            if not self.current_keys:
+                # Select first column if no pk, indexes found
+                self.current_keys = self.get_table_metadata(
+                    SQL_GET_COLUMNS,
+                    table
+                )[:1]
+
+            self.current_keys = key_strategy(self.current_keys)
+
+            if not self.max_value:
+                self.max_value = self.get_max_value(schema, table, self.inckey)
+            query_opts = self.get_query_opts(schema, table, state,
+                                             self.max_value)
+
+            q = get_query(**query_opts)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
@@ -95,8 +147,13 @@ class Postgres(panoply.DataSource):
             self.close()
             self.index += 1
             self.loaded = 0
+            self.current_keys = None
+            self.saved_state = {}
+            self.max_value = None
         else:
-            self._report_state(internals, self.loaded)
+            last_row = result[-1]
+            self._save_last_values(last_row)
+            self._report_state(self.index)
 
         return result
 
@@ -104,16 +161,20 @@ class Postgres(panoply.DataSource):
         self.log(query, "Loaded: %s" % self.loaded)
         try:
             self.cursor.execute(query)
-        except psycopg2.DatabaseError, e:
+        except psycopg2.DatabaseError as e:
             # We're ensuring that there is no connection or cursor objects
             # after an exception so that when we retry,
             # a new connection will be created.
+
+            # Since we got an error, it will trigger backoff expo
+            # We want the source to continue where it left off
             self.reset()
-            raise
+            print('Raise error {}'.format(e.message))
+            raise e
         self.log("DONE", query)
 
     def close(self):
-        '''close the connection, and clear everything'''
+        """close the connection, and clear everything"""
         if self.cursor:
             self.cursor.close()
         if self.conn:
@@ -130,12 +191,38 @@ class Postgres(panoply.DataSource):
         self.conn = None
         self.cursor = None
 
+    def get_query_opts(self, schema, table, state, max_value=None):
+        query_opts = {
+            'schema': schema,
+            'table': table,
+            'inckey': self.inckey,
+            'incval': self.incval,
+            'keys': self.current_keys,
+            'state': state,
+            'max_value': max_value
+        }
+        return query_opts
+
+    def get_max_value(self, schema, table, column):
+        if not column:
+            return None
+
+        query = 'SELECT MAX("{}") FROM "{}"."{}"'.format(
+            column,
+            schema,
+            table
+        )
+
+        self.execute(query)
+
+        return self.cursor.fetchall()[0]['max']
+
     def get_tables(self):
-        '''get the list of tables from the source'''
-        query = '''
+        """get the list of tables from the source"""
+        query = """
             SELECT * FROM information_schema.tables
             WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
-        '''
+        """
 
         self.conn, self.cursor = connect(self.source)
         self.execute(query)
@@ -145,13 +232,30 @@ class Postgres(panoply.DataSource):
 
         return result
 
-    def _report_state(self, params, loaded):
-        table_name = '%(__schemaname)s.%(__tablename)s' % params
-        self.state(self.state_id, {table_name: loaded})
+    def get_table_metadata(self, sql, table):
+        sql = sql.format(table)
+        self.execute(sql)
+
+        return self.cursor.fetchall()
+
+    def _save_last_values(self, last_row):
+        keys = map(lambda x: x.get('attname'), self.current_keys)
+        last_value = [(key, last_row.get(key)) for key in keys]
+        last_value = OrderedDict(last_value)
+
+        self.saved_state = {
+            'last_value': last_value
+        }
+
+    def _report_state(self, current_index):
+        state = {
+            'last_index': current_index
+        }
+        self.state(self.state_id, state)
 
 
 def connect(source):
-    '''connect to the DB using properties from the source'''
+    """connect to the DB using properties from the source"""
     host, dbname = source['addr'].rsplit('/', 1)
     port = 5432
     if ':' in host:
@@ -179,21 +283,70 @@ def connect(source):
     return conn, cur
 
 
-def get_query(schema, table, src, state=None):
-    '''return a SELECT query using properties from the source'''
-    offset = ''
+def get_query(schema, table, inckey, incval, keys, max_value, state=None):
+    """return a SELECT query using properties from the source"""
     where = ''
-    if src.get('inckey') and src.get('incval'):
-        where = " WHERE {} > '{}'".format(src['inckey'], src['incval'])
+    orderby = get_orderby(keys, inckey)
 
     if state:
-        offset = " OFFSET %s" % state
+        where = use_indexes(state)
 
-    return 'SELECT * FROM "{}"."{}"{}{}'.format(schema, table, where, offset)
+    if inckey and incval:
+        if where:
+            where = '{} AND '.format(where)
+
+        inc_clause = get_incremental(where, inckey, incval, max_value)
+        where = "{}{}".format(where, inc_clause)
+
+    if where:
+        where = ' WHERE {}'.format(where)
+
+    return 'SELECT * FROM "{}"."{}"{}{}'.format(
+        schema, table, where, orderby
+    )
+
+
+def get_orderby(keys, inckey):
+    orderby = ''
+    if keys:
+        keys = [key.get('attname') for key in keys]
+        if inckey and inckey not in keys:
+            keys.append(inckey)
+
+        orderby = " ORDER BY {}".format(','.join(keys))
+    return orderby
+
+
+def use_indexes(state):
+    multi_column_index = len(state)
+    where = "{} >= {}"
+
+    if multi_column_index > 1:
+        where = '({}) >= ({})'
+    where = where.format(
+        ','.join(state.keys()),
+        ','.join(map(lambda x: "'{}'".format(x), state.values()))
+    )
+    return where
+
+
+def get_incremental(where, inckey, incval, max_value):
+    if inckey not in where:
+        inc_clause = "{} >= '{}'".format(inckey, incval)
+        if max_value:
+            inc_clause = "({} AND {} <= '{}')".format(
+                inc_clause,
+                inckey,
+                max_value
+            )
+    else:
+        inc_clause = "{} <= '{}'".format(inckey, max_value)
+
+    return inc_clause
 
 
 def format_table_name(row):
-    '''format the table name with schema (and type if applicable)'''
+    """format the table name with schema (and type if applicable)"""
 
     # value should include the schema of the tables as there might be tables
     # with the same name in different schemas
@@ -205,3 +358,15 @@ def format_table_name(row):
         name += ' (VIEW)'
 
     return {'name': name, 'value': value}
+
+
+def key_strategy(keys):
+    keys_copy = copy(keys)
+
+    for strategy in KEY_STRATEGY:
+        results = strategy(keys_copy)
+
+        if results:
+            return results
+
+    return keys
