@@ -113,9 +113,9 @@ class TestPostgres(unittest.TestCase):
         inst.read()
 
         q = ('DECLARE cur CURSOR FOR '
-             'SELECT * FROM "schema"."foo" WHERE (inckey >= \'incval\' '
-             'AND inckey <= \'100\') '
-             'ORDER BY id,inckey')
+             'SELECT * FROM "schema"."foo" WHERE ("inckey" >= \'incval\' '
+             'AND "inckey" <= \'100\') '
+             'ORDER BY "id","inckey"')
         execute_mock = mock_connect.return_value.cursor.return_value.execute
         execute_mock.assert_has_calls([mock.call(q)], True)
 
@@ -237,8 +237,9 @@ class TestPostgres(unittest.TestCase):
         self.assertEqual(len(result), len(self.mock_recs))
         query = mock_execute.call_args_list[0][0][0]
         expected_query = 'FROM "public"."table1" ' \
-                         'WHERE (inckey >= \'incval\' AND inckey <= \'100\') '\
-                         'ORDER BY col1,inckey'
+                         'WHERE ("inckey" >= \'incval\' ' \
+                         'AND "inckey" <= \'100\') '\
+                         'ORDER BY "col1","inckey"'
         self.assertTrue(expected_query in query)
         query = mock_execute.call_args_list[1][0][0]
         expected_query = 'FETCH FORWARD'
@@ -256,8 +257,9 @@ class TestPostgres(unittest.TestCase):
         self.assertEqual(len(result), len(self.mock_recs))
         query = mock_execute.call_args_list[3][0][0]
         expected_query = 'FROM "public"."table2" ' \
-                         'WHERE (inckey >= \'incval\' AND inckey <= \'100\') '\
-                         'ORDER BY col2,inckey'
+                         'WHERE ("inckey" >= \'incval\' ' \
+                         'AND "inckey" <= \'100\') '\
+                         'ORDER BY "col2","inckey"'
         self.assertTrue(expected_query in query)
         query = mock_execute.call_args_list[4][0][0]
         expected_query = 'FETCH FORWARD'
@@ -275,8 +277,9 @@ class TestPostgres(unittest.TestCase):
         self.assertEqual(len(result), len(self.mock_recs))
         query = mock_execute.call_args_list[6][0][0]
         expected_query = 'FROM "public"."table3" ' \
-                         'WHERE (inckey >= \'incval\' AND inckey <= \'100\') '\
-                         'ORDER BY col3,inckey'
+                         'WHERE ("inckey" >= \'incval\' ' \
+                         'AND "inckey" <= \'100\') '\
+                         'ORDER BY "col3","inckey"'
         self.assertTrue(expected_query in query)
         query = mock_execute.call_args_list[7][0][0]
         expected_query = 'FETCH FORWARD'
@@ -374,7 +377,7 @@ class TestPostgres(unittest.TestCase):
 
         inst.read()
         first_query = mock_execute.call_args_list[0][0][0]
-        self.assertTrue("inckey >= 'incval' AND inckey <= '100'" in
+        self.assertTrue("\"inckey\" >= 'incval' AND \"inckey\" <= '100'" in
                         first_query)
         self.assertTrue('FROM "public"."test2"' in first_query)
 
@@ -457,7 +460,7 @@ class TestPostgres(unittest.TestCase):
             max_value,
             state
         )
-        expected = 'SELECT * FROM "public"."test" ORDER BY pk1'
+        expected = 'SELECT * FROM "public"."test" ORDER BY "pk1"'
 
         self.assertEqual(result, expected)
 
@@ -485,7 +488,7 @@ class TestPostgres(unittest.TestCase):
             max_value,
             state
         )
-        expected = 'SELECT * FROM "public"."test" ORDER BY pk1'
+        expected = 'SELECT * FROM "public"."test" ORDER BY "pk1"'
 
         self.assertEqual(result, expected)
 
@@ -518,7 +521,7 @@ class TestPostgres(unittest.TestCase):
             max_value,
             state
         )
-        expected = 'SELECT * FROM "public"."test" ORDER BY pk1,pk2,pk3'
+        expected = 'SELECT * FROM "public"."test" ORDER BY "pk1","pk2","pk3"'
 
         self.assertEqual(result, expected)
 
@@ -551,7 +554,7 @@ class TestPostgres(unittest.TestCase):
             max_value,
             state
         )
-        expected = 'SELECT * FROM "public"."test" ORDER BY pk1,pk2'
+        expected = 'SELECT * FROM "public"."test" ORDER BY "pk1","pk2"'
 
         self.assertEqual(result, expected)
 
@@ -584,7 +587,7 @@ class TestPostgres(unittest.TestCase):
             max_value,
             state
         )
-        expected = 'SELECT * FROM "public"."test" ORDER BY pk1,pk2'
+        expected = 'SELECT * FROM "public"."test" ORDER BY "pk1","pk2"'
 
         self.assertEqual(result, expected)
 
@@ -617,8 +620,8 @@ class TestPostgres(unittest.TestCase):
             max_value,
             state)
         expected = 'SELECT * FROM "public"."test" ' \
-                   'WHERE (id >= \'1\' AND id <= \'100\') ' \
-                   'ORDER BY pk1,pk2,id'
+                   'WHERE ("id" >= \'1\' AND "id" <= \'100\') ' \
+                   'ORDER BY "pk1","pk2","id"'
 
         self.assertEqual(result, expected)
 
@@ -655,8 +658,8 @@ class TestPostgres(unittest.TestCase):
             state
         )
         expected = 'SELECT * FROM "public"."test" ' \
-                   'WHERE (pk1,pk2) >= (\'1\',\'1994-09-16\') '\
-                   'ORDER BY pk1,pk2'
+                   'WHERE ("pk1","pk2") >= (\'1\',\'1994-09-16\') '\
+                   'ORDER BY "pk1","pk2"'
 
         self.assertEqual(result, expected)
 
@@ -687,8 +690,8 @@ class TestPostgres(unittest.TestCase):
             state
         )
         expected = 'SELECT * FROM "public"."test" ' \
-                   'WHERE pk1 >= \'1\' ' \
-                   'ORDER BY pk1'
+                   'WHERE "pk1" >= \'1\' ' \
+                   'ORDER BY "pk1"'
 
         self.assertEqual(result, expected)
 
@@ -719,9 +722,9 @@ class TestPostgres(unittest.TestCase):
             state
         )
         expected = 'SELECT * FROM "public"."test" ' \
-                   'WHERE pk1 >= \'1\' ' \
-                   'AND (id >= \'2\' AND id <= \'100\') ' \
-                   'ORDER BY pk1,id'
+                   'WHERE "pk1" >= \'1\' ' \
+                   'AND ("id" >= \'2\' AND "id" <= \'100\') ' \
+                   'ORDER BY "pk1","id"'
 
         self.assertEqual(result, expected)
 
@@ -764,7 +767,8 @@ class TestPostgres(unittest.TestCase):
         args = filter(lambda x: 'DECLARE' in x, args)
 
         # Second DECLARATION of cursor should start from last row fetched
-        self.assertTrue('WHERE (col1,col2) >= (\'foo3\',\'bar3\')' in args[1])
+        self.assertTrue('WHERE ("col1","col2") >= (\'foo3\',\'bar3\')' in
+                        args[1])
 
     @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
@@ -797,7 +801,7 @@ class TestPostgres(unittest.TestCase):
             max_value,
             state
         )
-        expected = 'SELECT * FROM "public"."test" ORDER BY pk1,pk2'
+        expected = 'SELECT * FROM "public"."test" ORDER BY "pk1","pk2"'
 
         self.assertEqual(result, expected)
 
@@ -850,7 +854,7 @@ class TestPostgres(unittest.TestCase):
             max_value,
             state
         )
-        expected = 'SELECT * FROM "public"."test" ORDER BY idx1,idx2'
+        expected = 'SELECT * FROM "public"."test" ORDER BY "idx1","idx2"'
 
         self.assertEqual(result, expected)
 
@@ -889,7 +893,7 @@ class TestPostgres(unittest.TestCase):
             max_value,
             state
         )
-        expected = 'SELECT * FROM "public"."test" ORDER BY idx3'
+        expected = 'SELECT * FROM "public"."test" ORDER BY "idx3"'
 
         self.assertEqual(result, expected)
 
@@ -923,8 +927,8 @@ class TestPostgres(unittest.TestCase):
 
         expected = 'DECLARE cur ' \
                    'CURSOR FOR SELECT * FROM "my_schema"."foo_bar" ' \
-                   "WHERE (inckey >= 'incval' AND inckey <= '100') " \
-                   'ORDER BY id,inckey'
+                   "WHERE (\"inckey\" >= 'incval' AND \"inckey\" <= '100') " \
+                   'ORDER BY "id","inckey"'
 
         self.assertEqual(args[0], expected)
 
@@ -935,7 +939,7 @@ class TestPostgres(unittest.TestCase):
         max_value = 100
 
         result = get_incremental(where, inckey, incval, max_value)
-        expected = "(inckey >= '1' AND inckey <= '100')"
+        expected = "(\"inckey\" >= '1' AND \"inckey\" <= '100')"
 
         self.assertEqual(result, expected)
 
