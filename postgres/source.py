@@ -312,7 +312,7 @@ def get_orderby(keys, inckey):
         keys = [key.get('attname') for key in keys]
         if inckey and inckey not in keys:
             keys.append(inckey)
-
+        keys = map(lambda i: '"{}"'.format(i), keys)
         orderby = " ORDER BY {}".format(','.join(keys))
     return orderby
 
@@ -323,8 +323,9 @@ def use_indexes(state):
 
     if multi_column_index > 1:
         where = '({}) >= ({})'
+    keys = map(lambda i: '"{}"'.format(i), state.keys())
     where = where.format(
-        ','.join(state.keys()),
+        ','.join(keys),
         ','.join(map(lambda x: "'{}'".format(x), state.values()))
     )
     return where
@@ -332,9 +333,9 @@ def use_indexes(state):
 
 def get_incremental(where, inckey, incval, max_value):
     if inckey not in where:
-        inc_clause = "{} >= '{}'".format(inckey, incval)
+        inc_clause = "\"{}\" >= '{}'".format(inckey, incval)
         if max_value:
-            inc_clause = "({} AND {} <= '{}')".format(
+            inc_clause = "({} AND \"{}\" <= '{}')".format(
                 inc_clause,
                 inckey,
                 max_value
