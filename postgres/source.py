@@ -105,6 +105,7 @@ class Postgres(panoply.DataSource):
             if not self.current_keys:
                 self.current_keys = self.get_table_metadata(
                     SQL_GET_KEYS,
+                    schema,
                     table
                 )
 
@@ -112,6 +113,7 @@ class Postgres(panoply.DataSource):
                 # Select first column if no pk, indexes found
                 self.current_keys = self.get_table_metadata(
                     SQL_GET_COLUMNS,
+                    schema,
                     table
                 )[:1]
 
@@ -232,8 +234,10 @@ class Postgres(panoply.DataSource):
 
         return result
 
-    def get_table_metadata(self, sql, table):
-        sql = sql.format(table)
+    def get_table_metadata(self, sql, schema, table):
+        search_path = '{}.{}'.format(schema, table)
+        sql = sql.format(search_path)
+        self.log(sql)
         self.execute(sql)
 
         return self.cursor.fetchall()
