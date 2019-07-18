@@ -788,7 +788,7 @@ class TestPostgres(unittest.TestCase):
         inckey = ''
         incval = ''
         max_value = 100
-        keys = inst.get_table_metadata(SQL_GET_KEYS, table)
+        keys = inst.get_table_metadata(SQL_GET_KEYS, schema, table)
         keys = key_strategy(keys)
         state = None
 
@@ -841,7 +841,7 @@ class TestPostgres(unittest.TestCase):
         inckey = ''
         incval = ''
         max_value = ''
-        keys = inst.get_table_metadata(SQL_GET_KEYS, table)
+        keys = inst.get_table_metadata(SQL_GET_KEYS, schema, table)
         keys = key_strategy(keys)
         state = None
 
@@ -880,7 +880,7 @@ class TestPostgres(unittest.TestCase):
         inckey = ''
         incval = ''
         max_value = 100
-        keys = inst.get_table_metadata(SQL_GET_KEYS, table)
+        keys = inst.get_table_metadata(SQL_GET_KEYS, schema, table)
         keys = key_strategy(keys)
         state = None
 
