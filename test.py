@@ -107,6 +107,35 @@ class TestPostgres(unittest.TestCase):
     @mock.patch.object(Postgres, 'get_table_metadata',
                        side_effect=mock_table_metadata)
     @mock.patch("psycopg2.connect")
+    def test_read_from_other_schema(self, mock_connect, mock_metadata, __):
+
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = [
+            {'value': 'my_schema.foo_bar'},
+            {'value': 'your_schema.bar_foo'}
+        ]
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        mock_data = [self.mock_recs[:1], []] * 2
+        cursor_return_value.fetchall.side_effect = mock_data
+
+        expected = [
+            ('my_schema', 'foo_bar'),
+            ('my_schema', 'foo_bar'),
+            ('your_schema', 'bar_foo'),
+            ('your_schema', 'bar_foo')
+        ]
+
+        for expected_schema, expected_table in expected:
+            inst.read()
+            _, schema, table = mock_metadata.call_args[0]
+
+            self.assertEqual(schema, expected_schema)
+            self.assertEqual(table, expected_table)
+
+    @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
+    @mock.patch.object(Postgres, 'get_table_metadata',
+                       side_effect=mock_table_metadata)
+    @mock.patch("psycopg2.connect")
     def test_incremental(self, mock_connect, _, __):
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'schema.foo'}]
@@ -788,7 +817,7 @@ class TestPostgres(unittest.TestCase):
         inckey = ''
         incval = ''
         max_value = 100
-        keys = inst.get_table_metadata(SQL_GET_KEYS, table)
+        keys = inst.get_table_metadata(SQL_GET_KEYS, schema, table)
         keys = key_strategy(keys)
         state = None
 
@@ -841,7 +870,7 @@ class TestPostgres(unittest.TestCase):
         inckey = ''
         incval = ''
         max_value = ''
-        keys = inst.get_table_metadata(SQL_GET_KEYS, table)
+        keys = inst.get_table_metadata(SQL_GET_KEYS, schema, table)
         keys = key_strategy(keys)
         state = None
 
@@ -880,7 +909,7 @@ class TestPostgres(unittest.TestCase):
         inckey = ''
         incval = ''
         max_value = 100
-        keys = inst.get_table_metadata(SQL_GET_KEYS, table)
+        keys = inst.get_table_metadata(SQL_GET_KEYS, schema, table)
         keys = key_strategy(keys)
         state = None
 
