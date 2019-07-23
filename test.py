@@ -983,6 +983,26 @@ class TestPostgres(unittest.TestCase):
 
         self.assertEqual(result, expected)
 
+    @mock.patch("postgres.source.Postgres.execute")
+    @mock.patch("psycopg2.connect")
+    def test_get_table_metadata(self, mock_connect, mock_execute):
+        testcases = [
+            {'schema': 'public', 'table': 'Errors'},
+            {'schema': 'public', 'table': 'Notifications'},
+        ]
+
+        stream = Postgres(self.source, OPTIONS)
+        stream.conn, stream.cursor = connect(self.source)
+
+        for i, tcase in enumerate(testcases):
+            schema, table = tcase['schema'], tcase['table']
+            stream.get_table_metadata(SQL_GET_KEYS, schema, table)
+
+            # make sure tables and schema are properly escaped when
+            # casting to regclass (as it implicitly converts to lowercase)
+            query = mock_execute.call_args_list[i][0][0]
+            self.assertIn('\'"%s"."%s"\'::regclass' % (schema, table), query)
+
 
 if __name__ == "__main__":
     unittest.main()
