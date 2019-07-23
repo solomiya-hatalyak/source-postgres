@@ -235,7 +235,7 @@ class Postgres(panoply.DataSource):
         return result
 
     def get_table_metadata(self, sql, schema, table):
-        search_path = '{}.{}'.format(schema, table)
+        search_path = '"{}"."{}"'.format(schema, table)
         sql = sql.format(search_path)
         self.log(sql)
         self.execute(sql)
