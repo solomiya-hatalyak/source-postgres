@@ -260,19 +260,16 @@ class Postgres(panoply.DataSource):
 
 def connect(source):
     """connect to the DB using properties from the source"""
-    host, dbname = source['addr'].rsplit('/', 1)
-    port = 5432
-    if ':' in host:
-        host, port = host.rsplit(':', 1)
-        port = int(port)  # pyscopg expects port to be numeric
 
+    # create partial DSN, user & pass still supplied as kwargs
+    # as they're input separately from addr and will take precendence
+    # over any user/pass from addr
+    dsn = 'postgres://%s' % source['addr']
     try:
         conn = psycopg2.connect(
-            host=host,
-            port=port,
+            dsn=dsn,
             user=source['user'],
             password=source['password'],
-            dbname=dbname,
             connect_timeout=CONNECT_TIMEOUT
         )
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
