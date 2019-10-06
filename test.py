@@ -188,7 +188,7 @@ class TestPostgres(unittest.TestCase):
             inst.get_tables()
 
     @mock.patch("psycopg2.connect")
-    def test_default_port(self, mock_connect):
+    def test_no_port(self, mock_connect):
         source = {
             "addr": "test.database.name/foobar",
             "user": "test",
@@ -199,11 +199,9 @@ class TestPostgres(unittest.TestCase):
         inst.read()
 
         mock_connect.assert_called_with(
-            host="test.database.name",
-            port=5432,
+            dsn="postgres://test.database.name/foobar",
             user=source['user'],
             password=source['password'],
-            dbname="foobar",
             connect_timeout=postgres.source.CONNECT_TIMEOUT
         )
 
@@ -219,11 +217,9 @@ class TestPostgres(unittest.TestCase):
         inst.read()
 
         mock_connect.assert_called_with(
-            host="test.database.name",
-            port=5439,
+            dsn="postgres://test.database.name:5439/foobar",
             user=source['user'],
             password=source['password'],
-            dbname="foobar",
             connect_timeout=postgres.source.CONNECT_TIMEOUT
         )
 
