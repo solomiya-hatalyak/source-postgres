@@ -223,6 +223,24 @@ class TestPostgres(unittest.TestCase):
             connect_timeout=postgres.source.CONNECT_TIMEOUT
         )
 
+    @mock.patch("psycopg2.connect")
+    def test_connection_parameters(self, mock_connect):
+        source = {
+            "addr": "test.database:5439/foobar?sslmode=verify-full",
+            "user": "test",
+            "password": "testpassword",
+            "tables": [{'value': 'schema.foo'}]
+        }
+        inst = Postgres(source, OPTIONS)
+        inst.read()
+
+        mock_connect.assert_called_with(
+            dsn="postgres://test.database:5439/foobar?sslmode=verify-full",
+            user=source['user'],
+            password=source['password'],
+            connect_timeout=postgres.source.CONNECT_TIMEOUT
+        )
+
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch.object(Postgres, 'get_table_metadata')
     @mock.patch("postgres.source.Postgres.execute")
