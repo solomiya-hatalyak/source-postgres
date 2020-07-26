@@ -39,12 +39,12 @@ SQL_GET_COLUMNS = """
 
 def _log_backoff(details):
     err = sys.exc_info()[1]
-    print 'Retrying (attempt %s) in %d seconds, after error %s: %s' % (
+    print('Retrying (attempt %s) in %d seconds, after error %s: %s' % (
         details['tries'],
         details['wait'],
         err.pgcode or '',
         err.message
-    )
+    ))
 
 
 # Used for testing - this constant is overriden durring tests so that we don't
@@ -273,7 +273,7 @@ def connect(source):
             connect_timeout=CONNECT_TIMEOUT
         )
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    except psycopg2.OperationalError, e:
+    except psycopg2.OperationalError as e:
         if 'authentication failed' in e.message:
             e = panoply.PanoplyException(
                 "Login failed for user: {}".format(source['user']),
