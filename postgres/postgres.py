@@ -1,10 +1,8 @@
 import backoff
-import panoply
-import psycopg2
 import psycopg2.extras
 import sys
 import uuid
-from copy import copy, deepcopy
+from copy import copy
 from . keystrategy import KEY_STRATEGY
 from .consts import *
 from .utils import *

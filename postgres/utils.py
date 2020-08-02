@@ -1,7 +1,10 @@
 import psycopg2
+import panoply
+from typing import Dict, Tuple, Any
+from .consts import CONNECT_TIMEOUT
 
 
-def format_table_name(row):
+def format_table_name(row) -> Dict:
     """format the table name with schema (and type if applicable)"""
 
     # value should include the schema of the tables as there might be tables
@@ -13,10 +16,10 @@ def format_table_name(row):
     if row['table_type'] == 'VIEW':
         name += ' (VIEW)'
 
-    return {'name': name, 'value': value}
+    return {'name': name, 'value': value}  # TODO: extract to a separate dataclass
 
 
-def connect(source):
+def connect(source) -> Tuple[None, Any]:
     """connect to the DB using properties from the source"""
 
     # create partial DSN, user & pass still supplied as kwargs
