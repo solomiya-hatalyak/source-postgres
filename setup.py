@@ -9,9 +9,9 @@ setup(
     url="http://panoply.io",
     install_requires=[
         "panoply-python-sdk@git+ssh://git@github.com/panoplyio/"
-        "panoply-python-sdk.git@v2.0.0#egg=panoply-python-sdk",
+        "panoply-python-sdk.git@v2.0.2#egg=panoply-python-sdk",
         "psycopg2==2.8.5",
-        "backoff==1.4.3"
+        "backoff==1.10.0"
     ],
     extras_require={
         "test": [
