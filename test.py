@@ -3,7 +3,7 @@ import unittest
 import psycopg2
 import postgres
 from collections import OrderedDict
-from postgres.source import (
+from postgres.postgres import (
     Postgres,
     connect,
     get_incremental,
@@ -202,7 +202,7 @@ class TestPostgres(unittest.TestCase):
             dsn="postgres://test.database.name/foobar",
             user=source['user'],
             password=source['password'],
-            connect_timeout=postgres.source.CONNECT_TIMEOUT
+            connect_timeout=postgres.postgres.CONNECT_TIMEOUT
         )
 
     @mock.patch("psycopg2.connect")
@@ -220,7 +220,7 @@ class TestPostgres(unittest.TestCase):
             dsn="postgres://test.database.name:5439/foobar",
             user=source['user'],
             password=source['password'],
-            connect_timeout=postgres.source.CONNECT_TIMEOUT
+            connect_timeout=postgres.postgres.CONNECT_TIMEOUT
         )
 
     @mock.patch("psycopg2.connect")
@@ -238,7 +238,7 @@ class TestPostgres(unittest.TestCase):
             dsn="postgres://test.database:5439/foobar?sslmode=verify-full",
             user=source['user'],
             password=source['password'],
-            connect_timeout=postgres.source.CONNECT_TIMEOUT
+            connect_timeout=postgres.postgres.CONNECT_TIMEOUT
         )
 
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
@@ -477,7 +477,7 @@ class TestPostgres(unittest.TestCase):
         with self.assertRaises(psycopg2.DatabaseError):
             inst.read()
 
-        self.assertEqual(mock_connect.call_count, postgres.source.MAX_RETRIES)
+        self.assertEqual(mock_connect.call_count, postgres.postgres.MAX_RETRIES)
 
     def test_get_query_without_state_and_incremental(self):
         inckey = ''

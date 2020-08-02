@@ -5,7 +5,7 @@ import psycopg2.extras
 import sys
 import uuid
 from copy import copy, deepcopy
-from keystrategy import KEY_STRATEGY
+from . keystrategy import KEY_STRATEGY
 from collections import OrderedDict
 
 
