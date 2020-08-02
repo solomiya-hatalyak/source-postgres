@@ -1,3 +1,4 @@
+from .dynamic_params import get_databases, get_tables
 
 
 CONFIG = {
@@ -44,16 +45,14 @@ CONFIG = {
             "placeholder": "Database Name",
             "required": True,
             "dependencies": ["host", "port", "password"],
-            "values": ["a", "b", "c"]
-            # "values": lambda source: get_databases(source)
+            "values": lambda source: get_databases(source)
         },
         {
             "name": "data_available",
             "required": True,
             "title": "Data Available",
             "type": "list",
-            "values": ["a", "b", "c"],
-            # "values": lambda source: get_tables(source),
+            "values": lambda source: get_tables(source),
             "dependencies": ["host", "port", "password", "database_name"]
         }
     ],

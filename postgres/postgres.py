@@ -6,35 +6,9 @@ import sys
 import uuid
 from copy import copy, deepcopy
 from . keystrategy import KEY_STRATEGY
+from .consts import *
+from .utils import *
 from collections import OrderedDict
-
-
-DEST = '{__tablename}'
-BATCH_SIZE = 5000
-CONNECT_TIMEOUT = 15  # seconds
-MAX_RETRIES = 5
-RETRY_TIMEOUT = 2
-
-SQL_GET_KEYS = """
-            SELECT a.attname,
-                   format_type(a.atttypid, a.atttypmod) as datatype,
-                   i.indnatts,
-                   i.indisunique,
-                   i.indisprimary
-            FROM   pg_index i
-                   JOIN   pg_attribute a ON a.attrelid = i.indrelid
-                   AND a.attnum = ANY(i.indkey)
-            WHERE  i.indrelid = '{}'::regclass
-            """
-
-SQL_GET_COLUMNS = """
-            SELECT a.attname,
-                    a.attrelid::regclass,
-                   format_type(a.atttypid, a.atttypmod) AS data_type
-            FROM pg_attribute as a
-            WHERE a.attrelid = '{}'::regclass
-            and a.attnum > 0;
-            """
 
 
 def _log_backoff(details):
@@ -58,7 +32,7 @@ class Postgres(panoply.DataSource):
     def __init__(self, source, options):
         super(Postgres, self).__init__(source, options)
 
-        self.source['destination'] = source.get('destination', DEST)
+        self.source['destination'] = source.get('destination', DESTINATION)
 
         self.batch_size = source.get('__batchSize', BATCH_SIZE)
         tables = source.get('tables', [])
@@ -219,21 +193,6 @@ class Postgres(panoply.DataSource):
 
         return self.cursor.fetchall()[0]['max']
 
-    def get_tables(self):
-        """get the list of tables from the source"""
-        query = """
-            SELECT * FROM information_schema.tables
-            WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
-        """
-
-        self.conn, self.cursor = connect(self.source)
-        self.execute(query)
-        result = map(format_table_name, self.cursor.fetchall())
-
-        self.close()
-
-        return result
-
     def get_table_metadata(self, sql, schema, table):
         search_path = '"{}"."{}"'.format(schema, table)
         sql = sql.format(search_path)
@@ -256,33 +215,6 @@ class Postgres(panoply.DataSource):
             'last_index': current_index
         }
         self.state(self.state_id, state)
-
-
-def connect(source):
-    """connect to the DB using properties from the source"""
-
-    # create partial DSN, user & pass still supplied as kwargs
-    # as they're input separately from addr and will take precendence
-    # over any user/pass from addr
-    dsn = 'postgres://%s' % source['addr']
-    try:
-        conn = psycopg2.connect(
-            dsn=dsn,
-            user=source['user'],
-            password=source['password'],
-            connect_timeout=CONNECT_TIMEOUT
-        )
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    except psycopg2.OperationalError as e:
-        if 'authentication failed' in e.message:
-            e = panoply.PanoplyException(
-                "Login failed for user: {}".format(source['user']),
-                retryable=False
-            )
-        raise e
-
-    return conn, cur
-
 
 def get_query(schema, table, inckey, incval, keys, max_value, state=None):
     """return a SELECT query using properties from the source"""
@@ -345,21 +277,6 @@ def get_incremental(where, inckey, incval, max_value):
         inc_clause = "{} <= '{}'".format(inckey, max_value)
 
     return inc_clause
-
-
-def format_table_name(row):
-    """format the table name with schema (and type if applicable)"""
-
-    # value should include the schema of the tables as there might be tables
-    # with the same name in different schemas
-    value = "%s.%s" % (row['table_schema'], row['table_name'])
-
-    # For display purposes name will indicate if this is a view or not,
-    name = value
-    if row['table_type'] == 'VIEW':
-        name += ' (VIEW)'
-
-    return {'name': name, 'value': value}
 
 
 def key_strategy(keys):
