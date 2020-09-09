@@ -3,8 +3,9 @@ import psycopg2.extras
 import sys
 import uuid
 from copy import copy
+from dal.queries.query_builder import get_query, get_max_value_query
 from . keystrategy import KEY_STRATEGY
-from .consts import *
+from dal.queries.consts import *
 from .utils import *
 from collections import OrderedDict
 
@@ -29,17 +30,15 @@ class Postgres(panoply.DataSource):
 
     def __init__(self, source, options):
         super(Postgres, self).__init__(source, options)
-
+# TODO: break everything to 2 objects: conf and state
         self.source['destination'] = source.get('destination', DESTINATION)
 
         self.batch_size = source.get('__batchSize', BATCH_SIZE)
         tables = source.get('tables', [])
         self.tables = tables[:]
         self.index = 0
-        self.conn = None
-        self.cursor = None
+        self.connector = None
         self.state_id = None
-        self.loaded = 0
         self.saved_state = {}
         self.current_keys = None
         self.inckey = source.get('inckey', '')
@@ -71,7 +70,7 @@ class Postgres(panoply.DataSource):
         self.progress(self.index + 1, total, msg)
 
         if not self.cursor:
-            self.conn, self.cursor = connect(self.source)
+            self.connector = connect(self.source)
             state = self.saved_state.get('last_value', None)
 
             if not self.current_keys:
@@ -118,9 +117,8 @@ class Postgres(panoply.DataSource):
 
         # no more rows for this table, clear and proceed to next table
         if not result:
-            self.close()
+            close_connection(self.connector)
             self.index += 1
-            self.loaded = 0
             self.current_keys = None
             self.saved_state = {}
             self.max_value = None
@@ -147,24 +145,6 @@ class Postgres(panoply.DataSource):
             raise e
         self.log("DONE", query)
 
-    def close(self):
-        """close the connection, and clear everything"""
-        if self.cursor:
-            self.cursor.close()
-        if self.conn:
-            # psycopg2 uses transactions for everything, hence we use rollback
-            # to cleanly exit the transaction although conn.close should do it
-            # implicitly
-            self.conn.rollback()
-            self.conn.close()
-
-        self.reset()
-
-    def reset(self):
-        self.loaded = 0
-        self.conn = None
-        self.cursor = None
-
     def get_query_opts(self, schema, table, state, max_value=None):
         query_opts = {
             'schema': schema,
@@ -175,18 +155,14 @@ class Postgres(panoply.DataSource):
             'state': state,
             'max_value': max_value
         }
+
         return query_opts
 
     def get_max_value(self, schema, table, column):
         if not column:
             return None
 
-        query = 'SELECT MAX("{}") FROM "{}"."{}"'.format(
-            column,
-            schema,
-            table
-        )
-
+        query = get_max_value_query(column, schema, table)
         self.execute(query)
 
         return self.cursor.fetchall()[0]['max']
@@ -213,68 +189,6 @@ class Postgres(panoply.DataSource):
             'last_index': current_index
         }
         self.state(self.state_id, state)
-
-def get_query(schema, table, inckey, incval, keys, max_value, state=None):
-    """return a SELECT query using properties from the source"""
-    where = ''
-    orderby = get_orderby(keys, inckey)
-
-    if state:
-        where = use_indexes(state)
-
-    if inckey and incval:
-        if where:
-            where = '{} AND '.format(where)
-
-        inc_clause = get_incremental(where, inckey, incval, max_value)
-        where = "{}{}".format(where, inc_clause)
-
-    if where:
-        where = ' WHERE {}'.format(where)
-
-    return 'SELECT * FROM "{}"."{}"{}{}'.format(
-        schema, table, where, orderby
-    )
-
-
-def get_orderby(keys, inckey):
-    orderby = ''
-    if keys:
-        keys = [key.get('attname') for key in keys]
-        if inckey and inckey not in keys:
-            keys.append(inckey)
-        keys = map(lambda i: '"{}"'.format(i), keys)
-        orderby = " ORDER BY {}".format(','.join(keys))
-    return orderby
-
-
-def use_indexes(state):
-    multi_column_index = len(state)
-    where = "{} >= {}"
-
-    if multi_column_index > 1:
-        where = '({}) >= ({})'
-    keys = map(lambda i: '"{}"'.format(i), state.keys())
-    where = where.format(
-        ','.join(keys),
-        ','.join(map(lambda x: "'{}'".format(x), state.values()))
-    )
-    return where
-
-
-def get_incremental(where, inckey, incval, max_value):
-    if inckey not in where:
-        inc_clause = "\"{}\" >= '{}'".format(inckey, incval)
-        if max_value:
-            inc_clause = "({} AND \"{}\" <= '{}')".format(
-                inc_clause,
-                inckey,
-                max_value
-            )
-    else:
-        inc_clause = "{} <= '{}'".format(inckey, max_value)
-
-    return inc_clause
 
 
 def key_strategy(keys):

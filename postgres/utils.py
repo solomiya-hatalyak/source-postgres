@@ -1,7 +1,8 @@
 import psycopg2
 import panoply
 from typing import Dict, Tuple, Any
-from .consts import CONNECT_TIMEOUT
+from dal.queries.consts import CONNECT_TIMEOUT
+from .dal.connector import Connector
 
 
 def format_table_name(row) -> Dict:
@@ -16,16 +17,20 @@ def format_table_name(row) -> Dict:
     if row['table_type'] == 'VIEW':
         name += ' (VIEW)'
 
-    return {'name': name, 'value': value}  # TODO: extract to a separate dataclass
+    return {'name': name, 'value': value}
 
 
-def connect(source) -> Tuple[None, Any]:
+def connect(source) -> Connector:
     """connect to the DB using properties from the source"""
 
     # create partial DSN, user & pass still supplied as kwargs
     # as they're input separately from addr and will take precendence
     # over any user/pass from addr
-    dsn = 'postgres://%s' % source['addr']
+    dsn = 'postgres://%s' % source['addr']  # kept for backward compatibility
+
+    if dsn is None or dsn == '':
+        dsn = 'postgres://{}:{}/{}'.format(source['host'], source['port'], source['db_name'])
+
     try:
         conn = psycopg2.connect(
             dsn=dsn,
@@ -42,4 +47,25 @@ def connect(source) -> Tuple[None, Any]:
             )
         raise e
 
-    return conn, cur
+    return Connector(connection=conn, cursor=cur)
+
+
+def close_connection(connector: Connector):
+    """close the connection, and clear everything"""
+    try:
+        if connector.cursor:
+            connector.cursor.close()
+        if connector.connection:
+            # psycopg2 uses transactions for everything, hence we use rollback
+            # to cleanly exit the transaction although conn.close should do it
+            # implicitly
+            connector.connection.rollback()
+            connector.connection.close()
+    finally:
+        reset(connector)
+
+
+def reset(connector: Connector):
+    connector.loaded = 0
+    connector.conn = None
+    connector.cursor = None
