@@ -3,20 +3,21 @@ import psycopg2.extras
 import sys
 import uuid
 from copy import copy
-from dal.queries.query_builder import get_query, get_max_value_query
+from .dal.queries.query_builder import get_query, get_max_value_query
 from . keystrategy import KEY_STRATEGY
-from dal.queries.consts import *
+from .dal.queries.consts import *
 from .utils import *
 from collections import OrderedDict
+import time
 
 
 def _log_backoff(details):
     err = sys.exc_info()[1]
-    print('Retrying (attempt %s) in %d seconds, after error %s: %s' % (
+    print('Retrying (attempt {}) in {:.2f} seconds, after error {}: {}'.format(
         details['tries'],
         details['wait'],
         err.pgcode or '',
-        err.message
+        err.pgerror
     ))
 
 
@@ -34,7 +35,7 @@ class Postgres(panoply.DataSource):
         self.source['destination'] = source.get('destination', DESTINATION)
 
         self.batch_size = source.get('__batchSize', BATCH_SIZE)
-        tables = source.get('tables', [])
+        tables = source.get('data_available', [])
         self.tables = tables[:]
         self.index = 0
         self.connector = None
@@ -51,6 +52,7 @@ class Postgres(panoply.DataSource):
         # Remove the state object from the source definition
         # since it does not need to be saved on the source.
         self.source.pop('state', None)
+        self.start_time = None
 
     @backoff.on_exception(backoff.expo,
                           psycopg2.DatabaseError,
@@ -60,16 +62,26 @@ class Postgres(panoply.DataSource):
     def read(self, batch_size=None):
         batch_size = batch_size or self.batch_size
         total = len(self.tables)
+
+        if self.start_time is None:
+            self.start_time = time.time()
+
         if self.index >= total:
+            end_time = time.time()
+            elapsed_time = time.strftime('%H:%M:%S',
+                                         time.gmtime(
+                                             end_time - self.start_time))
+            self.log('Collection duration: {}'.format(elapsed_time))
             return None  # no tables left, we're done
 
         schema, table = self.tables[self.index]['value'].split('.', 1)
 
         msg = 'Reading table {} ({}) out of {}'\
               .format(self.index + 1, table, total)
+        self.log(msg)
         self.progress(self.index + 1, total, msg)
 
-        if not self.cursor:
+        if self.connector is None or self.connector.cursor is None:
             self.connector = connect(self.source)
             state = self.saved_state.get('last_value', None)
 
@@ -100,7 +112,7 @@ class Postgres(panoply.DataSource):
 
         # read n(=BATCH_SIZE) records from the table
         self.execute('FETCH FORWARD {} FROM cur'.format(batch_size))
-        result = self.cursor.fetchall()
+        result = self.connector.cursor.fetchall()
 
         self.state_id = str(uuid.uuid4())
         # Add __schemaname and __tablename to each row so it would be available
@@ -110,13 +122,15 @@ class Postgres(panoply.DataSource):
         internals = dict(
             __tablename=table,
             __schemaname=schema,
+            __databasename=self.source.get('db_name'),
             __state=self.state_id
         )
         result = [dict(r, **internals) for r in result]
-        self.loaded += len(result)
+        self.connector.loaded += len(result)
 
         # no more rows for this table, clear and proceed to next table
         if not result:
+            self.log('Finished collection of table: {}'.format(table))
             close_connection(self.connector)
             self.index += 1
             self.current_keys = None
@@ -130,9 +144,9 @@ class Postgres(panoply.DataSource):
         return result
 
     def execute(self, query):
-        self.log(query, "Loaded: %s" % self.loaded)
+        self.log(query, "Loaded: {}".format(self.connector.loaded))
         try:
-            self.cursor.execute(query)
+            self.connector.cursor.execute(query)
         except psycopg2.DatabaseError as e:
             # We're ensuring that there is no connection or cursor objects
             # after an exception so that when we retry,
@@ -140,8 +154,8 @@ class Postgres(panoply.DataSource):
 
             # Since we got an error, it will trigger backoff expo
             # We want the source to continue where it left off
-            self.reset()
-            print('Raise error {}'.format(e.message))
+            close_connection(self.connector)
+            print('Raise error {}'.format(e))
             raise e
         self.log("DONE", query)
 
@@ -165,7 +179,7 @@ class Postgres(panoply.DataSource):
         query = get_max_value_query(column, schema, table)
         self.execute(query)
 
-        return self.cursor.fetchall()[0]['max']
+        return self.connector.cursor.fetchall()[0]['max']
 
     def get_table_metadata(self, sql, schema, table):
         search_path = '"{}"."{}"'.format(schema, table)
@@ -173,7 +187,7 @@ class Postgres(panoply.DataSource):
         self.log(sql)
         self.execute(sql)
 
-        return self.cursor.fetchall()
+        return self.connector.cursor.fetchall()
 
     def _save_last_values(self, last_row):
         keys = map(lambda x: x.get('attname'), self.current_keys)

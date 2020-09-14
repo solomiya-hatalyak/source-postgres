@@ -3,7 +3,7 @@ MIN_INDEXES = 1
 
 
 def primary_keys(keys):
-    return filter(lambda r: r.get('indisprimary'), keys)
+    return list(filter(lambda r: r.get('indisprimary'), keys))
 
 
 def unique_keys(keys, unique=True):
@@ -15,16 +15,16 @@ def non_unique_keys(keys, unique=False):
 
 
 def indexes(keys, unique):
-    keys = filter(lambda r: r.get('indisunique') == unique, keys)
+    keys = list(filter(lambda r: r.get('indisunique') == unique, keys))
 
     # Get indexes with multiple columns
-    multiple = filter(lambda r: r.get('indnatts') > MIN_INDEXES, keys)
+    multiple = list(filter(lambda r: r.get('indnatts') > MIN_INDEXES, keys))
 
     if multiple:
         # Get first column and find the other columns for this index
         first = multiple[0].get('indexrelid')
 
-        return filter(lambda r: r.get('indexrelid') == first, multiple)
+        return list(filter(lambda r: r.get('indexrelid') == first, multiple))
 
     # Return first index
     return keys[:1]
