@@ -1,0 +1,2 @@
+class PostgresValidationError(Exception):
+    pass

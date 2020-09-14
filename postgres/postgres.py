@@ -35,7 +35,7 @@ class Postgres(panoply.DataSource):
         super(Postgres, self).__init__(source, options)
 # TODO: break everything to 2 objects: conf and state
         self.source['destination'] = source.get('destination', DESTINATION)
-
+        validate_host_and_port(source)
         self.batch_size = source.get('__batchSize', BATCH_SIZE)
         tables = source.get('data_available', [])
         self.tables = tables[:]

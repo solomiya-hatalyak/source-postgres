@@ -5,12 +5,13 @@ import mock
 import psycopg2
 from panoply import PanoplyException
 
-from postgres.dal.queries.consts import SQL_GET_KEYS, SQL_GET_COLUMNS,\
+from postgres.dal.queries.consts import SQL_GET_KEYS, SQL_GET_COLUMNS, \
     MAX_RETRIES, CONNECT_TIMEOUT
 from postgres.dal.queries.query_builder import get_incremental, get_query
 from postgres.dynamic_params import get_tables
+from postgres.exceptions import PostgresValidationError
 from postgres.postgres import Postgres, key_strategy
-from postgres.utils import connect
+from postgres.utils import connect, validate_host_and_port
 
 OPTIONS = {
     "logger": lambda *msgs: None,  # no-op logger
@@ -36,7 +37,7 @@ class TestPostgres(unittest.TestCase):
     def setUp(self):
         self.source = {
             "host": "test.database.name",
-            "port": 5432,
+            "port": "5432",
             "db_name": "foobar",
             "username": "test",
             "password": "testpassword",
@@ -156,7 +157,7 @@ class TestPostgres(unittest.TestCase):
 
         source = {
             "host": "test.database.name",
-            "port": 5432,
+            "port": "5432",
             "db_name": "foobar",
             "username": "test",
             "password": "testpassword",
@@ -998,6 +999,26 @@ class TestPostgres(unittest.TestCase):
             query = mock_execute.call_args_list[i][0][0]
             self.assertIn('\'"{}"."{}"\'::regclass'.format(schema, table),
                           query)
+
+    def test_validate_host_and_port(self):
+        valid_sources = [
+            {"addr": "test.database.name:5439/postgres"},
+            {"host": "test.database.name", "port": "1234"},
+            {"host": "123.45.67.89", "port": "1234"}
+        ]
+
+        for source in valid_sources:
+            validate_host_and_port(source)
+
+        invalid_sources = [
+            {"host": "test.database.name", "port": "12 34"},
+            {"host": "https://test.database.name", "port": "1234"},
+            {"host": "test.database. name", "port": "1234"}
+        ]
+
+        for source in invalid_sources:
+            with self.assertRaises(PostgresValidationError):
+                validate_host_and_port(source)
 
 
 if __name__ == "__main__":

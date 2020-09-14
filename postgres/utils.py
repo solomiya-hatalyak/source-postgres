@@ -1,3 +1,4 @@
+import re
 from typing import Dict
 
 import panoply
@@ -6,6 +7,7 @@ from psycopg2.extras import RealDictRow
 
 from .dal.connector import Connector
 from .dal.queries.consts import CONNECT_TIMEOUT
+from .exceptions import PostgresValidationError
 
 
 def format_table_name(row: RealDictRow) -> Dict:
@@ -77,3 +79,41 @@ def reset(connector: Connector):
     connector.loaded = 0
     connector.connection = None
     connector.cursor = None
+
+
+def validate_hostname(hostname: str):
+    hostname = hostname.replace(':', ',')
+    if len(hostname) > 255:
+        raise ValueError("User provided invalid hostname.")
+    if hostname[-1] == ".":
+        # strip exactly one dot from the right, if present
+        hostname = hostname[:-1]
+    allowed = re.compile("(?!-)[A-Z\\d-]{1,63}(?<!-)$", re.IGNORECASE)
+    valid = all(allowed.match(x) for x in hostname.split("."))
+    if not valid:
+        raise PostgresValidationError("User provided invalid hostname.")
+
+
+def validate_port(port: str):
+    valid = port.isdigit() and 1 <= int(port) <= 65535
+    if not valid:
+        raise PostgresValidationError("User provided invalid port.")
+
+
+def validate_host_and_port(source: dict):
+    if "addr" in source:
+        validate_address(source.get("addr"))
+    else:
+        validate_hostname(source.get("host"))
+        validate_port(source.get("port"))
+
+
+def validate_address(address: str):
+    if "/" in address:
+        address, db_name = address.split("/")
+    if ":" in address:
+        host, port = address.split(":")
+        validate_hostname(host)
+        validate_port(port)
+    else:
+        validate_hostname(address)
