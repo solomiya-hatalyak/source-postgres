@@ -1,4 +1,13 @@
+import os
 from distutils.core import setup
+
+token = os.environ.get("CI_USER_GITHUB_TOKEN", "")
+
+required_packages = [
+    'panoply-python-sdk @ git+https://{}@github.com/panoplyio/'
+    'panoply-python-sdk.git@v2.0.2#egg==panoply-python-sdk'.format(token),
+    "psycopg2==2.8.5",
+    ]
 
 setup(
     name="panoply_postgres",
@@ -7,12 +16,7 @@ setup(
     author="Panoply Dev Team",
     author_email="support@panoply.io",
     url="http://panoply.io",
-    install_requires=[
-        "panoply-python-sdk@git+ssh://git@github.com/panoplyio/"
-        "panoply-python-sdk.git@v2.0.2#egg=panoply-python-sdk",
-        "psycopg2==2.8.5",
-        "backoff==1.10.0"
-    ],
+    install_requires=required_packages,
     extras_require={
         "test": [
             "pycodestyle==2.5.0",
