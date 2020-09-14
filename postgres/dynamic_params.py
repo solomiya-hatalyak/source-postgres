@@ -1,9 +1,10 @@
 from typing import Iterator
-from .utils import format_table_name, connect, close_connection
+
 from .dal.queries.consts import SQL_GET_ALL_TABLES
+from .utils import format_table_name, connect, close_connection
 
 
-def get_tables(source) -> Iterator:
+def get_tables(source: dict) -> Iterator:
     """get the list of tables from the source"""
 
     connector = connect(source)

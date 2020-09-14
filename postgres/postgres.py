@@ -1,17 +1,19 @@
+import sys
+import time
+import uuid
+from collections import OrderedDict
+from copy import copy
+
 import backoff
 import psycopg2.extras
-import sys
-import uuid
-from copy import copy
-from .dal.queries.query_builder import get_query, get_max_value_query
-from . keystrategy import KEY_STRATEGY
+
 from .dal.queries.consts import *
+from .dal.queries.query_builder import get_query, get_max_value_query
+from .keystrategy import KEY_STRATEGY
 from .utils import *
-from collections import OrderedDict
-import time
 
 
-def _log_backoff(details):
+def _log_backoff(details: dict):
     err = sys.exc_info()[1]
     print('Retrying (attempt {}) in {:.2f} seconds, after error {}: {}'.format(
         details['tries'],
@@ -29,7 +31,7 @@ def _get_connect_timeout():
 
 class Postgres(panoply.DataSource):
 
-    def __init__(self, source, options):
+    def __init__(self, source: dict, options: dict):
         super(Postgres, self).__init__(source, options)
 # TODO: break everything to 2 objects: conf and state
         self.source['destination'] = source.get('destination', DESTINATION)
@@ -59,7 +61,7 @@ class Postgres(panoply.DataSource):
                           max_tries=MAX_RETRIES,
                           on_backoff=_log_backoff,
                           base=_get_connect_timeout)
-    def read(self, batch_size=None):
+    def read(self, batch_size: int = None) -> (list, None):
         batch_size = batch_size or self.batch_size
         total = len(self.tables)
 
@@ -143,7 +145,7 @@ class Postgres(panoply.DataSource):
 
         return result
 
-    def execute(self, query):
+    def execute(self, query: str):
         self.log(query, "Loaded: {}".format(self.connector.loaded))
         try:
             self.connector.cursor.execute(query)
@@ -159,7 +161,8 @@ class Postgres(panoply.DataSource):
             raise e
         self.log("DONE", query)
 
-    def get_query_opts(self, schema, table, state, max_value=None):
+    def get_query_opts(self, schema: str, table: str,
+                       state: dict, max_value=None) -> dict:
         query_opts = {
             'schema': schema,
             'table': table,
@@ -172,7 +175,7 @@ class Postgres(panoply.DataSource):
 
         return query_opts
 
-    def get_max_value(self, schema, table, column):
+    def get_max_value(self, schema: str, table: str, column: str):
         if not column:
             return None
 
@@ -181,7 +184,7 @@ class Postgres(panoply.DataSource):
 
         return self.connector.cursor.fetchall()[0]['max']
 
-    def get_table_metadata(self, sql, schema, table):
+    def get_table_metadata(self, sql: str, schema: str, table: str) -> list:
         search_path = '"{}"."{}"'.format(schema, table)
         sql = sql.format(search_path)
         self.log(sql)
@@ -189,7 +192,7 @@ class Postgres(panoply.DataSource):
 
         return self.connector.cursor.fetchall()
 
-    def _save_last_values(self, last_row):
+    def _save_last_values(self, last_row: dict):
         keys = map(lambda x: x.get('attname'), self.current_keys)
         last_value = [(key, last_row.get(key)) for key in keys]
         last_value = OrderedDict(last_value)
@@ -198,14 +201,14 @@ class Postgres(panoply.DataSource):
             'last_value': last_value
         }
 
-    def _report_state(self, current_index):
+    def _report_state(self, current_index: int):
         state = {
             'last_index': current_index
         }
         self.state(self.state_id, state)
 
 
-def key_strategy(keys):
+def key_strategy(keys: list) -> list:
     keys_copy = copy(keys)
 
     for strategy in KEY_STRATEGY:

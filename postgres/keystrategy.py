@@ -1,20 +1,25 @@
+from typing import List
+
+from psycopg2.extras import RealDictRow
+
+Keys = List[RealDictRow]
 
 MIN_INDEXES = 1
 
 
-def primary_keys(keys):
+def primary_keys(keys: Keys):
     return list(filter(lambda r: r.get('indisprimary'), keys))
 
 
-def unique_keys(keys, unique=True):
+def unique_keys(keys: Keys, unique=True):
     return indexes(keys, unique)
 
 
-def non_unique_keys(keys, unique=False):
+def non_unique_keys(keys: Keys, unique=False):
     return indexes(keys, unique)
 
 
-def indexes(keys, unique):
+def indexes(keys: Keys, unique: bool) -> Keys:
     keys = list(filter(lambda r: r.get('indisunique') == unique, keys))
 
     # Get indexes with multiple columns

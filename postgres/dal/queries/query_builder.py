@@ -1,5 +1,7 @@
 
-def get_query(schema, table, inckey, incval, keys, max_value, state=None) -> str:
+
+def get_query(schema: str, table: str, inckey: str, incval,
+              keys: list, max_value, state: dict = None) -> str:
     """return a SELECT query using properties from the source"""
     where = ''
     orderby = get_orderby(keys, inckey)
@@ -22,7 +24,7 @@ def get_query(schema, table, inckey, incval, keys, max_value, state=None) -> str
     )
 
 
-def get_orderby(keys, inckey):
+def get_orderby(keys: list, inckey: str) -> str:
     orderby = ''
     if keys:
         keys = [key.get('attname') for key in keys]
@@ -33,7 +35,7 @@ def get_orderby(keys, inckey):
     return orderby
 
 
-def use_indexes(state) -> str:
+def use_indexes(state: dict) -> str:
     multi_column_index = len(state)
     where = "{} >= {}"
 
@@ -48,7 +50,7 @@ def use_indexes(state) -> str:
     return where
 
 
-def get_incremental(where, inckey, incval, max_value) -> str:
+def get_incremental(where: str, inckey: str, incval, max_value) -> str:
     if inckey not in where:
         inc_clause = "\"{}\" >= '{}'".format(inckey, incval)
         if max_value:

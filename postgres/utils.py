@@ -1,11 +1,14 @@
-import psycopg2
+from typing import Dict
+
 import panoply
-from typing import Dict, Tuple, Any
-from .dal.queries.consts import CONNECT_TIMEOUT
+import psycopg2
+from psycopg2.extras import RealDictRow
+
 from .dal.connector import Connector
+from .dal.queries.consts import CONNECT_TIMEOUT
 
 
-def format_table_name(row) -> Dict:
+def format_table_name(row: RealDictRow) -> Dict:
     """format the table name with schema (and type if applicable)"""
     table_types = {
         "VIEW": "view",
@@ -22,7 +25,7 @@ def format_table_name(row) -> Dict:
     return {'name': name, 'value': value}
 
 
-def connect(source) -> Connector:
+def connect(source: Dict) -> Connector:
     """connect to the DB using properties from the source"""
 
     # create partial DSN, user & pass still supplied as kwargs
