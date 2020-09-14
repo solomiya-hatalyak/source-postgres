@@ -1,18 +1,16 @@
-import mock
 import unittest
-import psycopg2
-import postgres
 from collections import OrderedDict
-from postgres.postgres import (
-    Postgres,
-    connect,
-    get_incremental,
-    get_query,
-    key_strategy,
-    SQL_GET_KEYS,
-    SQL_GET_COLUMNS
-)
+
+import mock
+import psycopg2
 from panoply import PanoplyException
+
+from postgres.dal.queries.consts import SQL_GET_KEYS, SQL_GET_COLUMNS,\
+    MAX_RETRIES, CONNECT_TIMEOUT
+from postgres.dal.queries.query_builder import get_incremental, get_query
+from postgres.dynamic_params import get_tables
+from postgres.postgres import Postgres, key_strategy
+from postgres.utils import connect
 
 OPTIONS = {
     "logger": lambda *msgs: None,  # no-op logger
@@ -37,8 +35,10 @@ def mock_table_metadata(*args):
 class TestPostgres(unittest.TestCase):
     def setUp(self):
         self.source = {
-            "addr": "test.database.name/foobar",
-            "user": "test",
+            "host": "test.database.name",
+            "port": 5432,
+            "db_name": "foobar",
+            "username": "test",
             "password": "testpassword",
             "inckey": "inckey",
             "incval": "incval"
@@ -61,21 +61,20 @@ class TestPostgres(unittest.TestCase):
         # It is not a field that returns in the actual query results
         mock_tables = [
             {'table_schema': 'dbo', 'table_name': 'testNoUnique',
-             'table_type': 'BASE TABLE', 'name': 'dbo.testNoUnique'},
+             'table_type': 'BASE TABLE', 'name': 'dbo.testNoUnique (table)'},
             {'table_schema': 'dbo', 'table_name': 'testNoIndex',
-             'table_type': 'BASE TABLE', 'name': 'dbo.testNoIndex'},
+             'table_type': 'BASE TABLE', 'name': 'dbo.testNoIndex (table)'},
             {'table_schema': 'SalesLT', 'table_name': 'Customer',
-             'table_type': 'BASE TABLE', 'name': 'SalesLT.Customer'},
+             'table_type': 'BASE TABLE', 'name': 'SalesLT.Customer (table)'},
             {'table_schema': 'SalesLT', 'table_name': 'ProductModel',
-             'table_type': 'BASE TABLE', 'name': 'SalesLT.ProductModel'},
+             'table_type': 'BASE TABLE',
+             'name': 'SalesLT.ProductModel (table)'},
             {'table_schema': 'mySchema', 'table_name': 'someTable',
-             'table_type': 'VIEW', 'name': 'mySchema.someTable (VIEW)'}
+             'table_type': 'VIEW', 'name': 'mySchema.someTable (view)'}
         ]
 
-        inst = Postgres(self.source, OPTIONS)
         m.return_value.cursor.return_value.fetchall.return_value = mock_tables
-
-        tables = inst.get_tables()
+        tables = get_tables(self.source)
         self.assertEqual(len(tables), len(mock_tables))
         for x in range(0, len(tables)):
             mtable = mock_tables[x]
@@ -90,7 +89,7 @@ class TestPostgres(unittest.TestCase):
     @mock.patch("psycopg2.connect")
     def test_read(self, mock_connect, _, __):
         """reads a table from the database and validates that each row
-        has a __tablename and __schemaname column"""
+        has a __tablename, __schemaname and __databasename column"""
 
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'my_schema.foo_bar'}]
@@ -102,6 +101,7 @@ class TestPostgres(unittest.TestCase):
         for x in range(0, len(rows)):
             self.assertEqual(rows[x]['__tablename'], 'foo_bar')
             self.assertEqual(rows[x]['__schemaname'], 'my_schema')
+            self.assertEqual(rows[x]['__databasename'], self.source['db_name'])
 
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch.object(Postgres, 'get_table_metadata',
@@ -155,10 +155,12 @@ class TestPostgres(unittest.TestCase):
         names are wrapped in enclosing quotes"""
 
         source = {
-            "addr": "test.database.name/foobar",
-            "user": "test",
+            "host": "test.database.name",
+            "port": 5432,
+            "db_name": "foobar",
+            "username": "test",
             "password": "testpassword",
-            "tables": [
+            "data_available": [
                 {'value': 'schema.foo'}
             ]
         }
@@ -171,79 +173,57 @@ class TestPostgres(unittest.TestCase):
 
     @mock.patch("psycopg2.connect")
     def test_connect_auth_error(self, mock_connect):
-        inst = Postgres(self.source, OPTIONS)
-        inst.tables = [{'value': 'schema.foo'}]
         msg = 'authentication failed'
         mock_connect.side_effect = psycopg2.OperationalError(msg)
         with self.assertRaises(PanoplyException):
-            inst.get_tables()
+            get_tables(self.source)
 
     @mock.patch("psycopg2.connect")
     def test_connect_other_error(self, mock_connect):
-        inst = Postgres(self.source, OPTIONS)
-        inst.tables = [{'value': 'schema.foo'}]
         msg = 'something unexpected'
         mock_connect.side_effect = psycopg2.OperationalError(msg)
         with self.assertRaises(psycopg2.OperationalError):
-            inst.get_tables()
+            get_tables(self.source)
 
     @mock.patch("psycopg2.connect")
-    def test_no_port(self, mock_connect):
-        source = {
-            "addr": "test.database.name/foobar",
-            "user": "test",
-            "password": "testpassword",
-            "tables": [{'value': 'schema.foo'}]
-        }
-        inst = Postgres(source, OPTIONS)
-        inst.read()
-
-        mock_connect.assert_called_with(
-            dsn="postgres://test.database.name/foobar",
-            user=source['user'],
-            password=source['password'],
-            connect_timeout=postgres.postgres.CONNECT_TIMEOUT
-        )
-
-    @mock.patch("psycopg2.connect")
-    def test_custom_port(self, mock_connect):
+    def test_connect_with_addr(self, mock_connect):
         source = {
             "addr": "test.database.name:5439/foobar",
-            "user": "test",
+            "username": "test",
             "password": "testpassword",
-            "tables": [{'value': 'schema.foo'}]
+            "data_available": [{'value': 'schema.foo'}]
         }
-        inst = Postgres(source, OPTIONS)
-        inst.read()
+        connect(source)
 
         mock_connect.assert_called_with(
             dsn="postgres://test.database.name:5439/foobar",
-            user=source['user'],
+            user=source['username'],
             password=source['password'],
-            connect_timeout=postgres.postgres.CONNECT_TIMEOUT
+            connect_timeout=CONNECT_TIMEOUT
         )
 
     @mock.patch("psycopg2.connect")
     def test_connection_parameters(self, mock_connect):
         source = {
-            "addr": "test.database:5439/foobar?sslmode=verify-full",
-            "user": "test",
+            "host": "test.database",
+            "port": 5432,
+            "username": "test",
             "password": "testpassword",
-            "tables": [{'value': 'schema.foo'}]
+            "db_name": "foobar",
+            "data_available": [{'value': 'schema.foo'}]
         }
-        inst = Postgres(source, OPTIONS)
-        inst.read()
+        connect(source)
 
         mock_connect.assert_called_with(
-            dsn="postgres://test.database:5439/foobar?sslmode=verify-full",
-            user=source['user'],
+            dsn="postgres://test.database:5432/foobar",
+            user=source['username'],
             password=source['password'],
-            connect_timeout=postgres.postgres.CONNECT_TIMEOUT
+            connect_timeout=CONNECT_TIMEOUT
         )
 
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch.object(Postgres, 'get_table_metadata')
-    @mock.patch("postgres.source.Postgres.execute")
+    @mock.patch("postgres.postgres.Postgres.execute")
     @mock.patch("psycopg2.connect")
     def test_read_end_stream(self, mock_connect, mock_execute, mock_metadata,
                              _):
@@ -344,7 +324,7 @@ class TestPostgres(unittest.TestCase):
                        side_effect=mock_max_value)
     @mock.patch.object(Postgres, 'get_table_metadata',
                        side_effect=mock_table_metadata)
-    @mock.patch("postgres.source.Postgres.state")
+    @mock.patch("postgres.postgres.Postgres.state")
     @mock.patch("psycopg2.connect")
     def test_reports_state(self, mock_connect, mock_state, _, __):
         """before returning a batch of data, the sources state should be
@@ -372,7 +352,7 @@ class TestPostgres(unittest.TestCase):
 
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch.object(Postgres, 'get_table_metadata', return_value=[])
-    @mock.patch("postgres.source.Postgres.state")
+    @mock.patch("postgres.postgres.Postgres.state")
     @mock.patch("psycopg2.connect")
     def test_no_state_for_empty_results(self, mock_connect, mock_state, _, __):
         """before returning a batch of data, the sources state should be
@@ -393,7 +373,7 @@ class TestPostgres(unittest.TestCase):
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch.object(Postgres, 'get_table_metadata',
                        side_effect=mock_table_metadata)
-    @mock.patch("postgres.source.Postgres.execute")
+    @mock.patch("postgres.postgres.Postgres.execute")
     @mock.patch("psycopg2.connect")
     def test_recover_from_state(self, mock_connect, mock_execute, _, __):
         """continues to read a table from the saved state"""
@@ -439,7 +419,7 @@ class TestPostgres(unittest.TestCase):
 
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch.object(Postgres, 'get_table_metadata', return_value=[])
-    @mock.patch("postgres.source.Postgres.execute")
+    @mock.patch("postgres.postgres.Postgres.execute")
     @mock.patch("psycopg2.connect")
     def test_batch_size(self, mock_connect, mock_execute, _, __):
         customBatchSize = 42
@@ -452,23 +432,24 @@ class TestPostgres(unittest.TestCase):
 
         inst.read()
         second_query = mock_execute.call_args_list[1][0][0]
-        txt = 'FETCH FORWARD %s' % customBatchSize
+        txt = 'FETCH FORWARD {}'.format(customBatchSize)
         self.assertTrue(second_query.startswith(txt))
 
     def test_reset_query_on_error(self):
         inst = Postgres(self.source, OPTIONS)
-        mock_cursor = mock.Mock()
-        mock_cursor.execute.side_effect = psycopg2.DatabaseError('oh noes!')
-        inst.cursor = mock_cursor
+        mock_connector = mock.Mock()
+        mock_connector.cursor.execute.side_effect = \
+            psycopg2.DatabaseError('oh noes!')
+        inst.connector = mock_connector
         with self.assertRaises(psycopg2.DatabaseError):
             inst.execute('SELECT 1')
 
-        # The self.loaded variable should have been reset to 0 in order to
+        # The connector.loaded variable should have been reset to 0 in order to
         # reset the query and start from the begining.
-        self.assertEqual(inst.loaded, 0)
-        self.assertEqual(inst.cursor, None)
+        self.assertEqual(inst.connector.loaded, 0)
+        self.assertEqual(inst.connector.cursor, None)
 
-    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("postgres.postgres.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
     def test_read_retries(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
@@ -477,7 +458,7 @@ class TestPostgres(unittest.TestCase):
         with self.assertRaises(psycopg2.DatabaseError):
             inst.read()
 
-        self.assertEqual(mock_connect.call_count, postgres.postgres.MAX_RETRIES)
+        self.assertEqual(mock_connect.call_count, MAX_RETRIES)
 
     def test_get_query_without_state_and_incremental(self):
         inckey = ''
@@ -773,7 +754,7 @@ class TestPostgres(unittest.TestCase):
 
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch.object(Postgres, 'get_table_metadata')
-    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("postgres.postgres.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
     def test_retry_with_last_values(self, mock_connect, mock_metadata, _):
 
@@ -807,17 +788,17 @@ class TestPostgres(unittest.TestCase):
         args = mock_connect.return_value.cursor.return_value\
             .execute.call_args_list
         args = [r[0] for r, _ in args]
-        args = filter(lambda x: 'DECLARE' in x, args)
+        args = list(filter(lambda x: 'DECLARE' in x, args))
 
         # Second DECLARATION of cursor should start from last row fetched
         self.assertTrue('WHERE ("col1","col2") >= (\'foo3\',\'bar3\')' in
                         args[1])
 
-    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("postgres.postgres.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
     def test_query_with_primary_keys(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
-        inst.conn, inst.cursor = connect(self.source)
+        inst.connector = connect(self.source)
 
         cursor_return_value = mock_connect.return_value.cursor.return_value
         cursor_return_value.fetchall.return_value = [
@@ -848,11 +829,11 @@ class TestPostgres(unittest.TestCase):
 
         self.assertEqual(result, expected)
 
-    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("postgres.postgres.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
     def test_query_with_unique_keys(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
-        inst.conn, inst.cursor = connect(self.source)
+        inst.connector = connect(self.source)
 
         cursor_return_value = mock_connect.return_value.cursor.return_value
         cursor_return_value.fetchall.return_value = [
@@ -901,11 +882,11 @@ class TestPostgres(unittest.TestCase):
 
         self.assertEqual(result, expected)
 
-    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("postgres.postgres.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
     def test_query_with_non_unique_keys(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
-        inst.conn, inst.cursor = connect(self.source)
+        inst.connector = connect(self.source)
 
         cursor_return_value = mock_connect.return_value.cursor.return_value
         cursor_return_value.fetchall.return_value = [
@@ -941,7 +922,7 @@ class TestPostgres(unittest.TestCase):
         self.assertEqual(result, expected)
 
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
-    @mock.patch("postgres.source.CONNECT_TIMEOUT", 0)
+    @mock.patch("postgres.postgres.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
     def test_query_with_no_keys(self, mock_connect, _):
         inst = Postgres(self.source, OPTIONS)
@@ -966,7 +947,7 @@ class TestPostgres(unittest.TestCase):
         args = mock_connect.return_value.cursor.return_value \
             .execute.call_args_list
         args = [r[0] for r, _ in args]
-        args = filter(lambda x: 'DECLARE' in x, args)
+        args = list(filter(lambda x: 'DECLARE' in x, args))
 
         expected = 'DECLARE cur ' \
                    'CURSOR FOR SELECT * FROM "my_schema"."foo_bar" ' \
@@ -997,7 +978,7 @@ class TestPostgres(unittest.TestCase):
 
         self.assertEqual(result, expected)
 
-    @mock.patch("postgres.source.Postgres.execute")
+    @mock.patch("postgres.postgres.Postgres.execute")
     @mock.patch("psycopg2.connect")
     def test_get_table_metadata(self, mock_connect, mock_execute):
         testcases = [
@@ -1006,7 +987,7 @@ class TestPostgres(unittest.TestCase):
         ]
 
         stream = Postgres(self.source, OPTIONS)
-        stream.conn, stream.cursor = connect(self.source)
+        stream.connector = connect(self.source)
 
         for i, tcase in enumerate(testcases):
             schema, table = tcase['schema'], tcase['table']
@@ -1015,7 +996,8 @@ class TestPostgres(unittest.TestCase):
             # make sure tables and schema are properly escaped when
             # casting to regclass (as it implicitly converts to lowercase)
             query = mock_execute.call_args_list[i][0][0]
-            self.assertIn('\'"%s"."%s"\'::regclass' % (schema, table), query)
+            self.assertIn('\'"{}"."{}"\'::regclass'.format(schema, table),
+                          query)
 
 
 if __name__ == "__main__":

@@ -75,5 +75,5 @@ def close_connection(connector: Connector):
 
 def reset(connector: Connector):
     connector.loaded = 0
-    connector.conn = None
+    connector.connection = None
     connector.cursor = None
