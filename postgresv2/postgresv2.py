@@ -7,6 +7,7 @@ import psycopg2.extras
 
 from .dal.queries.consts import *
 from .dal.queries.query_builder import get_query, get_max_value_query
+from .exceptions import PostgresInckeyError
 from .utils import *
 
 
@@ -123,6 +124,13 @@ class Postgres(panoply.DataSource):
         self.log(query, "Loaded: {}".format(self.connector.loaded))
         try:
             self.connector.cursor.execute(query)
+        except psycopg2.errors.UndefinedColumn as e:
+            if self.inckey:
+                raise PostgresInckeyError(
+                    'Incremental key "{}" does not exist in the '
+                    'table "{}"'.format(self.inckey,
+                                        self.tables[self.index]['value']))
+            raise e
         except psycopg2.DatabaseError as e:
             # We're ensuring that there is no connection or cursor objects
             # after an exception so that when we retry,

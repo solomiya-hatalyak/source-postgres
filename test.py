@@ -8,7 +8,7 @@ from panoply import PanoplyException
 from postgresv2.dal.queries.consts import MAX_RETRIES, CONNECT_TIMEOUT
 from postgresv2.dal.queries.query_builder import get_incremental, get_query
 from postgresv2.dynamic_params import get_tables
-from postgresv2.exceptions import PostgresValidationError
+from postgresv2.exceptions import PostgresValidationError, PostgresInckeyError
 from postgresv2.postgresv2 import Postgres
 from postgresv2.utils import connect, validate_host_and_port
 
@@ -172,6 +172,20 @@ class TestPostgres(unittest.TestCase):
         mock_connect.side_effect = psycopg2.OperationalError(msg)
         with self.assertRaises(psycopg2.OperationalError):
             get_tables(self.source)
+
+    @mock.patch("psycopg2.connect")
+    def test_invalid_inckey(self, mock_connect):
+        tables = [
+            {'value': 'public.table1'}
+        ]
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = tables
+        mock_connector = mock.Mock()
+        mock_connector.cursor.execute.side_effect = \
+            psycopg2.errors.UndefinedColumn('column does not exist')
+        inst.connector = mock_connector
+        with self.assertRaises(PostgresInckeyError):
+            inst.read()
 
     @mock.patch("psycopg2.connect")
     def test_connect_with_addr(self, mock_connect):
