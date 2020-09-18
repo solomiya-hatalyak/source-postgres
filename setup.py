@@ -27,6 +27,6 @@ setup(
 
     # place this package within the panoply package namespace
     package_dir={"panoply": ""},
-    packages=["panoply.postgres", "panoply.postgres.dal",
-              "panoply.postgres.dal.queries"]
+    packages=["panoply.postgresv2", "panoply.postgresv2.dal",
+              "panoply.postgresv2.dal.queries"]
 )

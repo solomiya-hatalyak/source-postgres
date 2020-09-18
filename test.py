@@ -5,12 +5,12 @@ import mock
 import psycopg2
 from panoply import PanoplyException
 
-from postgres.dal.queries.consts import MAX_RETRIES, CONNECT_TIMEOUT
-from postgres.dal.queries.query_builder import get_incremental, get_query
-from postgres.dynamic_params import get_tables
-from postgres.exceptions import PostgresValidationError
-from postgres.postgres import Postgres
-from postgres.utils import connect, validate_host_and_port
+from postgresv2.dal.queries.consts import MAX_RETRIES, CONNECT_TIMEOUT
+from postgresv2.dal.queries.query_builder import get_incremental, get_query
+from postgresv2.dynamic_params import get_tables
+from postgresv2.exceptions import PostgresValidationError
+from postgresv2.postgresv2 import Postgres
+from postgresv2.utils import connect, validate_host_and_port
 
 OPTIONS = {
     "logger": lambda *msgs: None,  # no-op logger
@@ -210,7 +210,7 @@ class TestPostgres(unittest.TestCase):
         )
 
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
-    @mock.patch("postgres.postgres.Postgres.execute")
+    @mock.patch("postgresv2.postgresv2.Postgres.execute")
     @mock.patch("psycopg2.connect")
     def test_read_end_stream(self, mock_connect, mock_execute, _):
         """reads the entire table from the database and validates that the
@@ -302,7 +302,7 @@ class TestPostgres(unittest.TestCase):
     # Make sure that the state is reported and that the
     # output data contains a key __state
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
-    @mock.patch("postgres.postgres.Postgres.state")
+    @mock.patch("postgresv2.postgresv2.Postgres.state")
     @mock.patch("psycopg2.connect")
     def test_reports_state(self, mock_connect, mock_state, _):
         """before returning a batch of data, the sources state should be
@@ -329,7 +329,7 @@ class TestPostgres(unittest.TestCase):
         mock_state.assert_called_with(state_id, state_obj)
 
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
-    @mock.patch("postgres.postgres.Postgres.state")
+    @mock.patch("postgresv2.postgresv2.Postgres.state")
     @mock.patch("psycopg2.connect")
     def test_no_state_for_empty_results(self, mock_connect, mock_state, _):
         """before returning a batch of data, the sources state should be
@@ -348,7 +348,7 @@ class TestPostgres(unittest.TestCase):
         mock_state.assert_not_called()
 
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
-    @mock.patch("postgres.postgres.Postgres.execute")
+    @mock.patch("postgresv2.postgresv2.Postgres.execute")
     @mock.patch("psycopg2.connect")
     def test_recover_from_state(self, mock_connect, mock_execute, _):
         """continues to read a table from the saved state"""
@@ -392,7 +392,7 @@ class TestPostgres(unittest.TestCase):
         self.assertIsNone(inst.source.get('state', None))
 
     @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
-    @mock.patch("postgres.postgres.Postgres.execute")
+    @mock.patch("postgresv2.postgresv2.Postgres.execute")
     @mock.patch("psycopg2.connect")
     def test_batch_size(self, mock_connect, mock_execute, _):
         customBatchSize = 42
@@ -422,7 +422,7 @@ class TestPostgres(unittest.TestCase):
         self.assertEqual(inst.connector.loaded, 0)
         self.assertEqual(inst.connector.cursor, None)
 
-    @mock.patch("postgres.postgres.CONNECT_TIMEOUT", 0)
+    @mock.patch("postgresv2.postgresv2.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
     def test_read_retries(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
