@@ -1,7 +1,8 @@
+from typing import Any
 
 
-def get_query(schema: str, table: str, inckey: str, incval,
-              max_value) -> str:
+def get_query(schema: str, table: str, inckey: str, incval: Any,
+              max_value: Any) -> str:
     """return a SELECT query using properties from the source"""
     where = ''
     orderby = get_orderby(inckey)
@@ -25,7 +26,7 @@ def get_orderby(inckey: str) -> str:
     return orderby
 
 
-def get_incremental(inckey: str, incval, max_value) -> str:
+def get_incremental(inckey: str, incval: Any, max_value: Any) -> str:
     inc_clause = "\"{}\" >= '{}'".format(inckey, incval)
     if max_value:
         inc_clause = "({} AND \"{}\" <= '{}')".format(

@@ -1,6 +1,7 @@
 import sys
 import time
 import uuid
+from typing import Any
 
 import backoff
 import psycopg2.extras
@@ -23,7 +24,7 @@ def _log_backoff(details: dict):
 
 # Used for testing - this constant is overriden durring tests so that we don't
 # actually have to wait for the retry
-def _get_connect_timeout():
+def _get_connect_timeout() -> int:
     return CONNECT_TIMEOUT
 
 
@@ -143,7 +144,8 @@ class Postgres(panoply.DataSource):
             raise e
         self.log("DONE", query)
 
-    def get_query_opts(self, schema: str, table: str, max_value=None) -> dict:
+    def get_query_opts(self, schema: str, table: str,
+                       max_value: Any = None) -> dict:
         query_opts = {
             'schema': schema,
             'table': table,
@@ -154,7 +156,8 @@ class Postgres(panoply.DataSource):
 
         return query_opts
 
-    def get_max_value(self, schema: str, table: str, column: str):
+    def get_max_value(self, schema: str, table: str,
+                      column: str) -> (Any, None):
         if not column:
             return None
 
