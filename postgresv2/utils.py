@@ -84,7 +84,7 @@ def reset(connector: Connector):
 def validate_hostname(hostname: str):
     hostname = hostname.replace(':', ',')
     if len(hostname) > 255:
-        raise ValueError("User provided invalid hostname.")
+        raise PostgresValidationError("User provided invalid hostname.")
     if hostname[-1] == ".":
         # strip exactly one dot from the right, if present
         hostname = hostname[:-1]
