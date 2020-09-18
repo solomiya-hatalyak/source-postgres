@@ -221,7 +221,6 @@ class TestPostgres(unittest.TestCase):
             {'value': 'public.table3'},
         ]
 
-
         inst = Postgres(self.source, OPTIONS)
         inst.tables = tables
         result_order = [
