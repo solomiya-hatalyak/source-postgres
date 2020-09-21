@@ -1,0 +1,48 @@
+name: Postgres data source
+on:
+  push:
+    branches:
+      - '*'
+  pull_request:
+    branches:
+      - master
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+    steps:
+    - id: checkout_ds_repo
+      name: Checkout this repo
+      uses: actions/checkout@v2
+    # Set up python
+    - name: Set up Python 3.8. # temporary
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
+    # Install DS dependecies
+    - id: ds
+      name: Install DS dependencies
+      env:
+        CI_USER_GITHUB_TOKEN: ${{ secrets.CI_USER_GITHUB_TOKEN }}
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[test]
+    # Install custom dependency
+    - name: Checkout GitHub Action Repo
+      uses: actions/checkout@v2
+      with:
+        repository: dsoloh/common-action-test
+    - name: Run Custom install dependency
+      uses: ./action_3
+      env:
+        CI_USER_GITHUB_TOKEN: ${{ secrets.CI_USER_GITHUB_TOKEN }}
+      with:
+        packageUrl: 'coverage==5.1'
+    # Run tests
+    - id: checkout_back
+      name: Checkout this repo
+      uses: actions/checkout@v2
+    - name: Run unit tests, coverage, and linting
+      run: |
+        coverage run --source=. test.py
+        coverage report -m
+        pycodestyle --format=pylint --count .
