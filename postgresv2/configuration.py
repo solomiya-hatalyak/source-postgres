@@ -60,7 +60,7 @@ CONFIG = {
             "type": "dynamic-list",
             "values": get_tables,
             "help": "Select the Postgres data tables or views to collect.",
-            "dependencies": ["host", "port", "password", "db_name"]
+            "dependencies": ["host", "port", "username", "password", "db_name"]
         },
         {
             'name': 'schema',
