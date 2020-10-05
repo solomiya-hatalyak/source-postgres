@@ -4,3 +4,7 @@ class PostgresValidationError(Exception):
 
 class PostgresInckeyError(Exception):
     pass
+
+
+class PostgresNoDataError(Exception):
+    pass

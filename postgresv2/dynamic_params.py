@@ -1,7 +1,8 @@
 from typing import Iterator
 
 from .dal.queries.consts import SQL_GET_ALL_TABLES
-from .utils import format_table_name, connect, close_connection,\
+from .exceptions import PostgresNoDataError
+from .utils import format_table_name, connect, close_connection, \
     validate_host_and_port
 
 
@@ -14,5 +15,8 @@ def get_tables(source: dict) -> Iterator:
     result = list(map(format_table_name, connector.cursor.fetchall()))
 
     close_connection(connector)
+
+    if not result:
+        raise PostgresNoDataError('Database is empty')
 
     return result
