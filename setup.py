@@ -11,7 +11,7 @@ required_packages = [
 
 setup(
     name="panoply_postgres",
-    version="3.0.1",
+    version="3.0.2",
     description="Panoply Data Source for Postgres",
     author="Panoply Dev Team",
     author_email="support@panoply.io",
