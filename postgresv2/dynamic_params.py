@@ -12,8 +12,8 @@ def get_tables(source: dict) -> Iterator:
     validate_host_and_port(source)
     connector = connect(source)
     connector.cursor.execute(SQL_GET_ALL_TABLES)
-    legacy = '__sourceMigrationDate' in source
-    result = [format_table_name(row, legacy)
+    migrated_source = '__sourceMigrationDate' in source
+    result = [format_table_name(row, migrated_source)
               for row in connector.cursor.fetchall()]
 
     close_connection(connector)

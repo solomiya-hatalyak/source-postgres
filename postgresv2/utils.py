@@ -10,7 +10,7 @@ from .dal.queries.consts import CONNECT_TIMEOUT
 from .exceptions import PostgresValidationError
 
 
-def format_table_name(row: RealDictRow, legacy=False) -> Dict:
+def format_table_name(row: RealDictRow, migrated_source=False) -> Dict:
     """format the table name with schema (and type if applicable)"""
     table_types = {
         "VIEW": "view",
@@ -22,7 +22,7 @@ def format_table_name(row: RealDictRow, legacy=False) -> Dict:
 
     # For display purposes name will indicate if this is a view or table
     name = value
-    if legacy:
+    if migrated_source:
         if row['table_type'] == 'VIEW':
             name += ' (VIEW)'
     else:
