@@ -65,7 +65,7 @@ def close_connection(connector: Connector):
     try:
         if connector.cursor:
             connector.cursor.close()
-        if connector.connection:
+        if not connector.connection.closed:
             # psycopg2 uses transactions for everything, hence we use rollback
             # to cleanly exit the transaction although conn.close should do it
             # implicitly
