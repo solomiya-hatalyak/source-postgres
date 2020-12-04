@@ -1,14 +1,14 @@
 import sys
 import time
 import uuid
-from typing import Any
 
 import backoff
 import psycopg2.extras
 
+from .dal.key_strategy import choose_index
 from .dal.queries.consts import *
-from .dal.queries.query_builder import get_query, get_max_value_query
-from .exceptions import PostgresInckeyError
+from .dal.queries.query_builder import get_query
+from .exceptions import PostgresInckeyError, PostgresUndefinedTableError
 from .utils import *
 
 
@@ -45,11 +45,10 @@ class Postgres(panoply.DataSource):
         self.current_keys = None
         self.inckey = source.get('inckey', '')
         self.incval = source.get('incval', '')
-
+        self.keys = None
+        self.last_values = None
         state = source.get('state', {})
         self.index = state.get('last_index', 0)
-        self.max_value = None
-
         # Remove the state object from the source definition
         # since it does not need to be saved on the source.
         self.source.pop('state', None)
@@ -85,11 +84,25 @@ class Postgres(panoply.DataSource):
         if self.connector is None or self.connector.cursor is None:
             self.connector = connect(self.source)
 
-            if not self.max_value:
-                self.max_value = self.get_max_value(schema, table, self.inckey)
-            query_opts = self.get_query_opts(schema, table, self.max_value)
+            if self.keys is None:
+                if self.inckey:
+                    self.keys = [self.inckey]
+                    if self.incval and self.last_values is None:
+                        self.last_values = [self.incval]
+                else:
+                    try:
+                        keys = self.get_table_metadata(
+                            SQL_GET_INDEXES,
+                            schema,
+                            table
+                        )
+                        self.keys = choose_index(keys)
+                    except psycopg2.errors.UndefinedTable:
+                        raise PostgresUndefinedTableError(
+                            'Table "{}"."{}" does not exist'.format(schema,
+                                                                    table))
 
-            q = get_query(**query_opts)
+            q = get_query(schema, table, self.keys, self.last_values)
             self.execute('DECLARE cur CURSOR FOR {}'.format(q))
 
         # read n(=BATCH_SIZE) records from the table
@@ -115,11 +128,21 @@ class Postgres(panoply.DataSource):
             self.log('Finished collection of table: {}'.format(table))
             close_connection(self.connector)
             self.index += 1
-            self.max_value = None
+            self.keys = None
+            self.last_values = None
         else:
+            last_row = result[-1]
+            self.last_values = [last_row[column] for column in self.keys]
             self._report_state(self.index)
 
         return result
+
+    def get_table_metadata(self, sql, schema, table):
+        search_path = '"{}"."{}"'.format(schema, table)
+        sql = sql.format(search_path)
+        self.execute(sql)
+
+        return self.connector.cursor.fetchall()
 
     def execute(self, query: str):
         self.log(query, "Loaded: {}".format(self.connector.loaded))
@@ -144,27 +167,15 @@ class Postgres(panoply.DataSource):
             raise e
         self.log("DONE", query)
 
-    def get_query_opts(self, schema: str, table: str,
-                       max_value: Any = None) -> dict:
+    def get_query_opts(self, schema: str, table: str) -> dict:
         query_opts = {
             'schema': schema,
             'table': table,
-            'inckey': self.inckey,
-            'incval': self.incval,
-            'max_value': max_value
+            'last_index_value': self.last_values,
+            'index': self.index
         }
 
         return query_opts
-
-    def get_max_value(self, schema: str, table: str,
-                      column: str) -> (Any, None):
-        if not column:
-            return None
-
-        query = get_max_value_query(column, schema, table)
-        self.execute(query)
-
-        return self.connector.cursor.fetchall()[0]['max']
 
     def _report_state(self, current_index: int):
         state = {

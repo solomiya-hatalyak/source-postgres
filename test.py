@@ -1,12 +1,12 @@
 import unittest
-from collections import OrderedDict
 
 import mock
 import psycopg2
 from panoply import PanoplyException
 
 from postgresv2.dal.queries.consts import MAX_RETRIES, CONNECT_TIMEOUT
-from postgresv2.dal.queries.query_builder import get_incremental, get_query
+from postgresv2.dal.queries.query_builder import get_query
+from postgresv2.dal.key_strategy import choose_index
 from postgresv2.dynamic_params import get_tables
 from postgresv2.exceptions import PostgresValidationError, PostgresInckeyError
 from postgresv2.postgresv2 import Postgres
@@ -15,15 +15,6 @@ from postgresv2.utils import connect, validate_host_and_port
 OPTIONS = {
     "logger": lambda *msgs: None,  # no-op logger
 }
-
-MOCK_MAX_VALUE = 100
-
-
-def mock_max_value(*args):
-    column = args[2]
-    if column:
-        return MOCK_MAX_VALUE
-    return None
 
 
 class TestPostgres(unittest.TestCase):
@@ -34,8 +25,8 @@ class TestPostgres(unittest.TestCase):
             "db_name": "foobar",
             "username": "test",
             "password": "testpassword",
-            "inckey": "inckey",
-            "incval": "incval"
+            "inckey": "id",
+            "incval": "1"
         }
         self.mock_recs = [
             {'id': 1, 'col1': 'foo1', 'col2': 'bar1'},
@@ -77,9 +68,8 @@ class TestPostgres(unittest.TestCase):
             self.assertEqual(tables[x]['name'], mtable['name'])
             self.assertEqual(tables[x]['value'], v)
 
-    @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch("psycopg2.connect")
-    def test_read(self, mock_connect, _):
+    def test_read(self, mock_connect):
         """reads a table from the database and validates that each row
         has a __tablename, __schemaname and __databasename column"""
 
@@ -95,9 +85,8 @@ class TestPostgres(unittest.TestCase):
             self.assertEqual(rows[x]['__schemaname'], 'my_schema')
             self.assertEqual(rows[x]['__databasename'], self.source['db_name'])
 
-    @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch("psycopg2.connect")
-    def test_read_from_other_schema(self, mock_connect, __):
+    def test_read_from_other_schema(self, mock_connect):
 
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [
@@ -123,17 +112,15 @@ class TestPostgres(unittest.TestCase):
                 self.assertEqual(schema, expected_schema)
                 self.assertEqual(table, expected_table)
 
-    @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch("psycopg2.connect")
-    def test_incremental(self, mock_connect, _):
+    def test_incremental(self, mock_connect):
         inst = Postgres(self.source, OPTIONS)
         inst.tables = [{'value': 'schema.foo'}]
         inst.read()
 
         q = ('DECLARE cur CURSOR FOR '
-             'SELECT * FROM "schema"."foo" WHERE ("inckey" >= \'incval\' '
-             'AND "inckey" <= \'100\') '
-             'ORDER BY "inckey"')
+             'SELECT * FROM "schema"."foo" '
+             'WHERE "id" >= \'1\' ORDER BY "id"')
         execute_mock = mock_connect.return_value.cursor.return_value.execute
         execute_mock.assert_has_calls([mock.call(q)], True)
 
@@ -223,10 +210,9 @@ class TestPostgres(unittest.TestCase):
             connect_timeout=CONNECT_TIMEOUT
         )
 
-    @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch("postgresv2.postgresv2.Postgres.execute")
     @mock.patch("psycopg2.connect")
-    def test_read_end_stream(self, mock_connect, mock_execute, _):
+    def test_read_end_stream(self, mock_connect, mock_execute):
         """reads the entire table from the database and validates that the
         stream returns None to indicate the end"""
         tables = [
@@ -254,9 +240,8 @@ class TestPostgres(unittest.TestCase):
         self.assertEqual(len(result), len(self.mock_recs))
         query = mock_execute.call_args_list[0][0][0]
         expected_query = 'FROM "public"."table1" ' \
-                         'WHERE ("inckey" >= \'incval\' ' \
-                         'AND "inckey" <= \'100\') '\
-                         'ORDER BY "inckey"'
+                         'WHERE "id" >= \'1\' ' \
+                         'ORDER BY "id"'
         self.assertTrue(expected_query in query)
         query = mock_execute.call_args_list[1][0][0]
         expected_query = 'FETCH FORWARD'
@@ -274,9 +259,8 @@ class TestPostgres(unittest.TestCase):
         self.assertEqual(len(result), len(self.mock_recs))
         query = mock_execute.call_args_list[3][0][0]
         expected_query = 'FROM "public"."table2" ' \
-                         'WHERE ("inckey" >= \'incval\' ' \
-                         'AND "inckey" <= \'100\') '\
-                         'ORDER BY "inckey"'
+                         'WHERE "id" >= \'1\' ' \
+                         'ORDER BY "id"'
         self.assertTrue(expected_query in query)
         query = mock_execute.call_args_list[4][0][0]
         expected_query = 'FETCH FORWARD'
@@ -294,9 +278,8 @@ class TestPostgres(unittest.TestCase):
         self.assertEqual(len(result), len(self.mock_recs))
         query = mock_execute.call_args_list[6][0][0]
         expected_query = 'FROM "public"."table3" ' \
-                         'WHERE ("inckey" >= \'incval\' ' \
-                         'AND "inckey" <= \'100\') '\
-                         'ORDER BY "inckey"'
+                         'WHERE "id" >= \'1\' ' \
+                         'ORDER BY "id"'
         self.assertTrue(expected_query in query)
         query = mock_execute.call_args_list[7][0][0]
         expected_query = 'FETCH FORWARD'
@@ -314,10 +297,9 @@ class TestPostgres(unittest.TestCase):
 
     # Make sure that the state is reported and that the
     # output data contains a key __state
-    @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch("postgresv2.postgresv2.Postgres.state")
     @mock.patch("psycopg2.connect")
-    def test_reports_state(self, mock_connect, mock_state, _):
+    def test_reports_state(self, mock_connect, mock_state):
         """before returning a batch of data, the sources state should be
         reported as well as having the state ID appended to each data object"""
 
@@ -341,10 +323,9 @@ class TestPostgres(unittest.TestCase):
         # State function was called with relevant table name and row count
         mock_state.assert_called_with(state_id, state_obj)
 
-    @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch("postgresv2.postgresv2.Postgres.state")
     @mock.patch("psycopg2.connect")
-    def test_no_state_for_empty_results(self, mock_connect, mock_state, _):
+    def test_no_state_for_empty_results(self, mock_connect, mock_state):
         """before returning a batch of data, the sources state should be
         reported as well as having the state ID appended to each data object"""
 
@@ -360,10 +341,9 @@ class TestPostgres(unittest.TestCase):
         # State function was called with relevant table name and row count
         mock_state.assert_not_called()
 
-    @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch("postgresv2.postgresv2.Postgres.execute")
     @mock.patch("psycopg2.connect")
-    def test_recover_from_state(self, mock_connect, mock_execute, _):
+    def test_recover_from_state(self, mock_connect, mock_execute):
         """continues to read a table from the saved state"""
 
         tables = [
@@ -387,8 +367,7 @@ class TestPostgres(unittest.TestCase):
 
         inst.read()
         first_query = mock_execute.call_args_list[0][0][0]
-        self.assertTrue("\"inckey\" >= 'incval' AND \"inckey\" <= '100'" in
-                        first_query)
+        self.assertTrue("\"id\" >= '1'" in first_query)
         self.assertTrue('FROM "public"."test2"' in first_query)
 
     def test_remove_state_from_source(self):
@@ -404,10 +383,9 @@ class TestPostgres(unittest.TestCase):
         # No state key should be inside the source definition
         self.assertIsNone(inst.source.get('state', None))
 
-    @mock.patch.object(Postgres, 'get_max_value', side_effect=mock_max_value)
     @mock.patch("postgresv2.postgresv2.Postgres.execute")
     @mock.patch("psycopg2.connect")
-    def test_batch_size(self, mock_connect, mock_execute, _):
+    def test_batch_size(self, mock_connect, mock_execute):
         customBatchSize = 42
         self.source['__batchSize'] = customBatchSize
         inst = Postgres(self.source, OPTIONS)
@@ -435,6 +413,48 @@ class TestPostgres(unittest.TestCase):
         self.assertEqual(inst.connector.loaded, 0)
         self.assertEqual(inst.connector.cursor, None)
 
+    @mock.patch("psycopg2.connect")
+    def test_retry_cursor_from_last_value(self, mock_connect):
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = [{'value': 'my_schema.foo_bar'}]
+        inst.inckey = None
+        inst.incval = None
+        inst.keys = ['col1', 'col2']
+        records = [
+            {'id': 1, 'col1': 'foo1', 'col2': 'bar1'},
+            {'id': 2, 'col1': 'foo2', 'col2': 'bar2'},
+            {'id': 3, 'col1': 'foo3', 'col2': 'bar3'}
+        ]
+
+        cursor_execute = mock_connect.return_value.cursor.return_value.execute
+        cursor_execute.side_effect = [
+            lambda *args: None,
+            lambda *args: None,
+            psycopg2.DatabaseError('TestRetriesError'),
+            lambda *args: None,
+            lambda *args: None
+        ]
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.return_value = records
+        # First read no error
+        inst.read()
+
+        init_query = cursor_execute.call_args_list[0][0][0]
+        expected_init_query = 'DECLARE cur CURSOR FOR SELECT * FROM ' \
+                              '"my_schema"."foo_bar" ORDER BY "col1", "col2"'
+
+        # Raise retry error and restart cursor
+        inst.read()
+
+        retried_query = cursor_execute.call_args_list[-2][0][0]
+        expected_retried_query = 'DECLARE cur CURSOR FOR SELECT * FROM ' \
+                                 '"my_schema"."foo_bar" WHERE ' \
+                                 '"col1" >= \'foo3\' AND "col2" >= \'bar3\' ' \
+                                 'ORDER BY "col1", "col2"'
+
+        self.assertEqual(init_query, expected_init_query)
+        self.assertEqual(retried_query, expected_retried_query)
+
     @mock.patch("postgresv2.postgresv2.CONNECT_TIMEOUT", 0)
     @mock.patch("psycopg2.connect")
     def test_read_retries(self, mock_connect):
@@ -446,68 +466,178 @@ class TestPostgres(unittest.TestCase):
 
         self.assertEqual(mock_connect.call_count, MAX_RETRIES)
 
-    def test_get_query_without_incremental(self):
-        inckey = ''
-        incval = ''
+    @mock.patch("psycopg2.connect")
+    def test_use_inckey_as_index(self, mock_connect):
+        inst = Postgres(self.source, OPTIONS)
+        inst.tables = [{'value': 'my_schema.foo_bar'}]
+
+        cursor_return_value = mock_connect.return_value.cursor.return_value
+        cursor_return_value.fetchall.return_value = [{'id': 1, 'col1': 1}]
+
+        inst.read()
+
+        expected = [self.source['inckey']]
+        result = inst.keys
+        self.assertEqual(result, expected)
+
+    def test_get_query_with_multicolumn_index(self):
+        keys = ['col1', 'col2']
+        last_values = ['1', '2']
         schema = 'public'
         table = 'test'
-        max_value = None
 
         result = get_query(
             schema,
             table,
-            inckey,
-            incval,
-            max_value
+            keys,
+            last_values
+        )
+        expected = 'SELECT * FROM "public"."test" ' \
+                   'WHERE "col1" >= \'1\' AND "col2" >= \'2\' ' \
+                   'ORDER BY "col1", "col2"'
+
+        self.assertEqual(result, expected)
+
+    def test_get_query_without_last_values(self):
+        keys = ['col1', 'col2']
+        last_values = None
+        schema = 'public'
+        table = 'test'
+
+        result = get_query(
+            schema,
+            table,
+            keys,
+            last_values
+        )
+        expected = 'SELECT * FROM "public"."test" ' \
+                   'ORDER BY "col1", "col2"'
+
+        self.assertEqual(result, expected)
+
+    def test_get_query_without_index(self):
+        keys = []
+        last_values = None
+        schema = 'public'
+        table = 'test'
+
+        result = get_query(
+            schema,
+            table,
+            keys,
+            last_values
         )
         expected = 'SELECT * FROM "public"."test"'
 
         self.assertEqual(result, expected)
 
-    def test_orderby_with_incremental_key(self):
-        inckey = 'pk3'
-        incval = ''
-        max_value = 10
-        schema = 'public'
-        table = 'test'
+    def test_choose_index_primary_key(self):
+        keys = [
+            {
+                'attname': 'col1',
+                'indnatts': 1,
+                'indisunique': True,
+                'indisprimary': False,
+                'column_order': 1
+            },
+            {
+                'attname': 'id',
+                'indnatts': 1,
+                'indisunique': True,
+                'indisprimary': True,
+                'column_order': 1
+            },
+            {
+                'attname': 'col2',
+                'indnatts': 1,
+                'indisunique': True,
+                'indisprimary': False,
+                'column_order': 1
+            }
+        ]
 
-        result = get_query(
-            schema,
-            table,
-            inckey,
-            incval,
-            max_value,
-        )
-        expected = 'SELECT * FROM "public"."test" ORDER BY "pk3"'
-
-        self.assertEqual(result, expected)
-
-    def test_orderby_with_incremental_value(self):
-        inckey = 'pk2'
-        incval = '100'
-        max_value = '200'
-        schema = 'public'
-        table = 'test'
-
-        result = get_query(
-            schema,
-            table,
-            inckey,
-            incval,
-            max_value
-        )
-        expected = 'SELECT * FROM "public"."test" WHERE ' \
-                   '("pk2" >= \'100\' AND "pk2" <= \'200\') ORDER BY "pk2"'
+        result = choose_index(keys)
+        expected = ['id']
 
         self.assertEqual(result, expected)
 
-    def test_get_incremental_key_in_where(self):
-        inckey = 'inckey'
-        incval = 1
-        max_value = 100
+    def test_choose_index_unique_key(self):
+        keys = [
+            {
+                'attname': 'col1',
+                'indnatts': 1,
+                'indisunique': True,
+                'indisprimary': False,
+                'column_order': 1
+            },
+            {
+                'attname': 'col2',
+                'indnatts': 1,
+                'indisunique': False,
+                'indisprimary': False,
+                'column_order': 1
+            }
+        ]
 
-        result = get_incremental(inckey, incval, max_value)
-        expected = "(\"inckey\" >= '1' AND \"inckey\" <= '100')"
+        result = choose_index(keys)
+        expected = ['col1']
+
+        self.assertEqual(result, expected)
+
+    def test_choose_index_non_unique_key(self):
+        keys = [
+            {
+                'attname': 'col1',
+                'indnatts': 1,
+                'indisunique': False,
+                'indisprimary': False,
+                'column_order': 1
+            },
+            {
+                'attname': 'col2',
+                'indnatts': 1,
+                'indisunique': False,
+                'indisprimary': False,
+                'column_order': 1
+            }
+        ]
+
+        result = choose_index(keys)
+        expected = ['col1']
+
+        self.assertEqual(result, expected)
+
+    def test_choose_index_columns_order(self):
+        keys = [
+            {
+                'attname': 'id',
+                'indexrelid': 1,
+                'indnatts': 1,
+                'indisunique': False,
+                'indisprimary': False,
+                'column_order': 1
+            },
+            {
+                'attname': 'col1',
+                'indexrelid': 2,
+                'indnatts': 2,
+                'indisunique': True,
+                'indisprimary': False,
+                'column_order': 2
+            },
+
+            {
+                'attname': 'col2',
+                'indexrelid': 2,
+                'indnatts': 2,
+                'indisunique': True,
+                'indisprimary': False,
+                'column_order': 1
+            }
+        ]
+
+        result = choose_index(keys)
+        expected = ['col2', 'col1']
 
         self.assertEqual(result, expected)
 

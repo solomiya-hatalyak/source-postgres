@@ -1,46 +1,30 @@
-from typing import Any
 
 
-def get_query(schema: str, table: str, inckey: str, incval: Any,
-              max_value: Any) -> str:
+def get_query(schema: str, table: str, keys: list,
+              last_values: (list, None)) -> str:
     """return a SELECT query using properties from the source"""
-    where = ''
-    orderby = get_orderby(inckey)
-
-    if inckey and incval:
-        inc_clause = get_incremental(inckey, incval, max_value)
-        where = "{}{}".format(where, inc_clause)
-
-    if where:
-        where = ' WHERE {}'.format(where)
+    where = get_where(keys, last_values)
+    orderby = get_orderby(keys)
 
     return 'SELECT * FROM "{}"."{}"{}{}'.format(
         schema, table, where, orderby
     )
 
 
-def get_orderby(inckey: str) -> str:
+def get_orderby(keys: list) -> str:
     orderby = ''
-    if inckey:
-        orderby = ' ORDER BY "{}"'.format(inckey)
+    if keys:
+        columns = ['"{}"'.format(column) for column in keys]
+        columns = ', '.join(columns)
+        orderby = ' ORDER BY {}'.format(columns)
     return orderby
 
 
-def get_incremental(inckey: str, incval: Any, max_value: Any) -> str:
-    inc_clause = "\"{}\" >= '{}'".format(inckey, incval)
-    if max_value:
-        inc_clause = "({} AND \"{}\" <= '{}')".format(
-            inc_clause,
-            inckey,
-            max_value
-        )
-
-    return inc_clause
-
-
-def get_max_value_query(column: str, schema: str, table: str) -> str:
-    return 'SELECT MAX("{}") FROM "{}"."{}"'.format(
-            column,
-            schema,
-            table
-        )
+def get_where(keys: list, last_values: (list, None)) -> str:
+    where = ''
+    if last_values:
+        conditions = ["\"{}\" >= '{}'".format(column, value)
+                      for column, value in zip(keys, last_values)]
+        conditions = ' AND '.join(conditions)
+        where = ' WHERE {}'.format(conditions)
+    return where
