@@ -8,3 +8,7 @@ class PostgresInckeyError(Exception):
 
 class PostgresNoDataError(Exception):
     pass
+
+
+class PostgresUndefinedTableError(Exception):
+    pass
