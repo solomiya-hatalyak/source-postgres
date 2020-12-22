@@ -7,7 +7,7 @@ CONFIG = {
         {
             "name": "host",
             "title": "Host",
-            "type": "string",
+            "type": "text",
             "placeholder": "IP (e.g. 123.45.67.89) or "
                            "hostname (e.g. your.server.com)",
             "required": True,
@@ -31,7 +31,7 @@ CONFIG = {
             "name": "username",
             "title": "Username",
             "placeholder": "Username",
-            "type": "string",
+            "type": "text",
             "help": "Enter your Postgres username.",
             "required": True
         },
@@ -46,7 +46,7 @@ CONFIG = {
         {
             "name": "db_name",
             "title": "Database Name",
-            'type': 'string',
+            "type": "text",
             "placeholder": "Database Name",
             "required": True,
             "help": "Select the Postgres database from where to collect data.",
