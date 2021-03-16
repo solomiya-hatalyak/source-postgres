@@ -1,0 +1,136 @@
+name: Full CI/CD, Postgres datasource 
+on:
+  push:
+    branches: [ master ]    
+  pull_request:
+    types: [assigned, opened, synchronize, reopened ]
+  workflow_dispatch:
+    inputs: 
+      branch:
+        description: 'Branch to build'
+        required: true
+        default: "master"
+        
+      version:
+        description: 'DS version used for tagging docker image only.'
+        required: true
+        default: "manual-latest"
+        
+      region:
+        description: 'AWS Region used for logging in to ECR.'
+        required: true
+        default: "us-east-2"
+        
+      ds_name:
+        description: 'Datasource name'
+        required: true
+        default: "source-postgres"
+        
+      ds_repo:
+        description: 'Datasource repo'
+        required: true
+        default: "panoplyio/source-postgres"
+        
+      ecr_host:
+        description: 'ECR host'
+        required: true
+        default: "937513027176.dkr.ecr.us-east-1.amazonaws.com"
+        
+      datasource_dir:
+        description: 'Docker build location'
+        required: true
+        default: "."        
+
+jobs:
+  tests_lints:
+    runs-on: ubuntu-18.04
+    steps:
+    - name: Checkout this repo
+      uses: actions/checkout@v2
+      with:
+        path: working_source
+    - name: get code    
+      uses: actions/checkout@master
+      with:
+        repository: ${{ github.event.inputs.ds_repo }}
+        path: ./${{ github.event.inputs.ds_name }}
+        token: ${{ secrets.CI_USER_GITHUB_TOKEN }}
+    - name: get version
+      run: VERSION=$(python ./${{ github.event.inputs.ds_name }}/setup.py --version) && echo $VERSION
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
+    - name : python -v
+      run: python -v
+    - name: Install DS
+      env:
+        GITAUTH: ${{ secrets.CI_USER_GITHUB_TOKEN }}
+      run: |
+        cd ./${{ github.event.inputs.ds_name }}
+        python -m pip --version
+        python -m pip install --upgrade pip
+        python -m pip --version
+        pip install -e .[test]
+    - name: Run unit tests, coverage, and linting
+      run: |
+        ls && pwd
+        cd ./${{ github.event.inputs.ds_name }}
+        coverage run --source=. test.py
+        coverage report -m
+        pycodestyle --format=pylint --max-line-length=120 --count .
+        
+  build_and_push_docker_image:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    runs-on: ubuntu-18.04
+    steps:
+    - name: apt update
+      run: sudo apt-get update
+    - name: install docker
+      run: sudo  apt install runc containerd docker.io
+    - name: Instal AWS CLI
+      run: sudo apt-get install awscli
+    - uses: actions/checkout@master
+      with:
+        repository: panoplyio/common-actions 
+        path: ./common-actions
+        token: ${{ secrets.CI_USER_GITHUB_TOKEN }}
+    - uses: actions/checkout@v2
+      with:
+        path: ./ds_sources
+    - name: Execute build script
+      env: 
+        GITAUTH: ${{ secrets.CI_USER_GITHUB_TOKEN }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID_TEST }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY_TEST }}
+      run: |
+        a="${{ secrets.BASE_IMAGE }}" 
+        b="${{ github.event.inputs.datasource_dir }}" 
+        c="${{ github.event.inputs.ds_name }}" 
+        d="${{ github.event.inputs.version }}" 
+        e="${{ github.event.inputs.ecr_host}}"
+        echo ${#a} ${#b} ${#c} ${#d} ${#e}
+        aws sts get-caller-identity
+        sudo systemctl unmask docker
+        sudo systemctl start docker
+        cd ./ds_sources
+        chmod +x ../common-actions/build_docker.sh
+        #test if vars have come from manual runs on automatic push- check the length of the event. vars        
+        if [[ ! ${#e} ]]; then
+          echo "Using manual variables"
+          ../common-actions/build_docker.sh \
+              -b   ${{ secrets.BASE_IMAGE }} \
+              -n   ${{ github.event.inputs.ds_name }} \
+              -v   ${{ github.event.inputs.version }} \
+              -e   ${{ github.event.inputs.ecr_host}} \
+              -d   ${{ github.event.inputs.datasource_dir }}
+        else
+          echo "Automatic run detected"
+          export  branch=master version="automatic-latest" region="us-east-2" ds_name="source-postgres" ds_repo="panoplyio/source-postgres" datasource_dir="." ecr_host="937513027176.dkr.ecr.us-east-1.amazonaws.com"
+          ../common-actions/build_docker.sh \
+              -b   ${{ secrets.BASE_IMAGE }} \
+              -n   $ds_name  \
+              -v   $version  \
+              -e   $ecr_host \
+              -d   $datasource_dir
+        fi

@@ -6,7 +6,7 @@ token = os.environ.get("CI_USER_GITHUB_TOKEN", "")
 required_packages = [
     'panoply-python-sdk @ git+https://{}@github.com/panoplyio/'
     'panoply-python-sdk.git@v2.0.2#egg==panoply-python-sdk'.format(token),
-    "psycopg2==2.8.5",
+    "psycopg2==2.8.6",
     ]
 
 setup(
