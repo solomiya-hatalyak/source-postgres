@@ -35,3 +35,8 @@ jobs:
         coverage run --source=. test.py
         coverage report -m
         pycodestyle --format=pylint --max-line-length=120 --count .
+    - name: Check tag name availability
+      run: |
+        echo "TAG_NAME=$(python -c "from importlib.metadata import version; print(version(\"panoply-googledrive\"))")" >> $GITHUB_ENV
+        DETAILS=$(git ls-remote --exit-code --tags origin "v${{ env.TAG_NAME }}" || echo "")
+        if [ "$DETAILS" != "" ]; then echo "v${{ env.TAG_NAME }} tag_name is already used."; exit 1; fi
