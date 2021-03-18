@@ -1,0 +1,44 @@
+name: Build DS, run tests and linters
+on:
+  push:
+    branches:
+      - '*'         # matches every branch that doesn't contain a '/'
+      - '*/*'       # matches every branch containing a single '/'
+      - '**'        # matches every branch
+      - '!master'   # excludes master
+jobs:
+  build:
+    runs-on: ubuntu-18.04
+    steps:
+    - id: checkout_ds_repo
+      name: Checkout this repo
+      uses: actions/checkout@v2
+    # Set up python
+    - name: Set up Python 3.8. # temporary
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
+    # Install DS dependecies
+    - id: ds
+      name: Install DS dependencies
+      env:
+        GITAUTH: ${{ secrets.CI_USER_GITHUB_TOKEN }}
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[test]
+    - name: Retrieve DS version
+      run: |
+        echo "TAG_NAME=$(python -c "from importlib.metadata import version; print(version(\"panoply-postgres\"))")" >> $GITHUB_ENV
+    # Run tests
+    - id: checkout_back
+      name: Checkout this repo
+      uses: actions/checkout@v2
+    - name: Run unit tests, coverage, and linting
+      run: |
+        coverage run --source=. test.py
+        coverage report -m
+        pycodestyle --format=pylint --max-line-length=120 --count .
+    - name: Check tag name availability
+      run: |
+        DETAILS=$(git ls-remote --exit-code --tags origin "v${{ env.TAG_NAME }}" || echo "")
+        if [ "$DETAILS" != "" ]; then echo "v${{ env.TAG_NAME }} tag_name is already used."; exit 1; fi
