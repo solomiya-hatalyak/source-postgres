@@ -72,6 +72,13 @@ jobs:
         python -m pip install --upgrade pip
         python -m pip --version
         pip install -e .[test]
+    - name: Retrieve DS version
+      run: |
+        echo "TAG_NAME=$(python -c "from importlib.metadata import version; print(version(\"panoply-postgres\"))")" >> $GITHUB_ENV
+    - name: Check tag name availability
+      run: |
+        DETAILS=$(git ls-remote --exit-code --tags origin "v${{ env.TAG_NAME }}" || echo "")
+        if [ "$DETAILS" != "" ]; then echo "v${{ env.TAG_NAME }} tag_name is already used."; exit 1; fi
     - name: Run unit tests, coverage, and linting
       run: |
         ls && pwd
@@ -98,6 +105,17 @@ jobs:
     - uses: actions/checkout@v2
       with:
         path: ./ds_sources
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
+    - name: Retrieve DS version
+      env:
+        GITAUTH: ${{ secrets.CI_USER_GITHUB_TOKEN }}
+      run: |
+        cd ./ds_sources/
+        pip install -e .[test]
+        echo "TAG_NAME=$(python -c "from importlib.metadata import version; print(version(\"panoply-postgres\"))")" >> $GITHUB_ENV
     - name: Execute build script
       env: 
         GITAUTH: ${{ secrets.CI_USER_GITHUB_TOKEN }}
@@ -136,7 +154,6 @@ jobs:
         fi     
     - name: Check tag name availability
       run: |
-        echo "TAG_NAME=$(python -c "from importlib.metadata import version; print(version(\"panoply-googledrive\"))")" >> $GITHUB_ENV
         DETAILS=$(git ls-remote --exit-code --tags origin "v${{ env.TAG_NAME }}" || echo "")
         if [ "$DETAILS" != "" ]; then echo "v${{ env.TAG_NAME }} tag_name is already used."; exit 1; fi
     - name: Create release
