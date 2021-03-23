@@ -10,6 +10,7 @@ from .dal.queries.consts import *
 from .dal.queries.query_builder import get_query
 from .exceptions import PostgresInckeyError, PostgresUndefinedTableError
 from .utils import *
+from .types import register_types
 
 
 def _log_backoff(details: dict):
@@ -83,6 +84,8 @@ class Postgres(panoply.DataSource):
 
         if self.connector is None or self.connector.cursor is None:
             self.connector = connect(self.source)
+
+            register_types(self.connector.cursor)
 
             if self.keys is None:
                 if self.inckey:
