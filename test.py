@@ -1,4 +1,5 @@
 import unittest
+import datetime
 
 import mock
 import psycopg2
@@ -10,7 +11,8 @@ from postgresv2.dal.key_strategy import choose_index
 from postgresv2.dynamic_params import get_tables
 from postgresv2.exceptions import PostgresValidationError, PostgresInckeyError
 from postgresv2.postgresv2 import Postgres
-from postgresv2.utils import connect, validate_host_and_port
+from postgresv2.utils import connect, validate_host_and_port, register_adapters
+from postgresv2.types import UnsafeTypeAdapter, UNSAFE_TYPES
 
 OPTIONS = {
     "logger": lambda *msgs: None,  # no-op logger
@@ -660,6 +662,33 @@ class TestPostgres(unittest.TestCase):
         for source in invalid_sources:
             with self.assertRaises(PostgresValidationError):
                 validate_host_and_port(source)
+
+    def test_register_adapters(self):
+        adapters = register_adapters()
+        global_types = psycopg2.extensions.string_types.values()
+
+        for adapter in adapters:
+            self.assertIn(adapter.new_type, global_types)
+
+    def test_unsafe_type_adapters(self):
+        unsafe_values = [
+            ('753-04-21 BC', 'PYDATE', str),
+            ('2021-03-24', 'PYDATE', datetime.date),
+            ('753-04-21 12:00:00 BC', 'PYDATETIME', str),
+            ('2021-03-24 10:43:11', 'PYDATETIME', datetime.date),
+
+            # This values should contain tz but it requires cursor
+            ('753-04-21 13:00:00 BC', 'PYDATETIMETZ', str),
+            ('2021-03-24 13:43:11', 'PYDATETIMETZ', datetime.date),
+        ]
+
+        adapters = register_adapters()
+
+        for unsafe_value, origin_type, target_type in unsafe_values:
+            for adapter in adapters:
+                if adapter.new_type.name == origin_type:
+                    value = adapter.cast(unsafe_value, None)
+                    self.assertIsInstance(value, target_type)
 
 
 if __name__ == "__main__":
