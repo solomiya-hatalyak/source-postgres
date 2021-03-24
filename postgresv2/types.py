@@ -20,7 +20,7 @@ class UnsafeTypeAdapter:
     """
 
     def __init__(
-        self, 
+        self,
         original_type: type,
         original_array_type: type,
         safe_type: type = None
@@ -43,6 +43,12 @@ class UnsafeTypeAdapter:
 
     def register(self, scope=None):
         """Registers new type with psycopg `register_type` function."""
+        scope_types = (
+            psycopg2.extensions.connection,
+            psycopg2.extensions.cursor,
+        )
+        if not isinstance(scope, scope_types):
+            scope = None
         psycopg2.extensions.register_type(self.new_type, scope)
         psycopg2.extensions.register_type(self.new_array_type, scope)
 
