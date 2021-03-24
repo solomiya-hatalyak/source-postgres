@@ -3,6 +3,11 @@ import datetime
 
 import mock
 import psycopg2
+from psycopg2.extensions import (
+    PYDATE, PYDATEARRAY,
+    PYDATETIME, PYDATETIMEARRAY,
+    PYDATETIMETZ, PYDATETIMETZARRAY,
+)
 from panoply import PanoplyException
 
 from postgresv2.dal.queries.consts import MAX_RETRIES, CONNECT_TIMEOUT
@@ -669,26 +674,54 @@ class TestPostgres(unittest.TestCase):
 
         for adapter in adapters:
             self.assertIn(adapter.new_type, global_types)
+            self.assertIn(adapter.new_array_type, global_types)
 
     def test_unsafe_type_adapters(self):
         unsafe_values = [
-            ('753-04-21 BC', 'PYDATE', str),
-            ('2021-03-24', 'PYDATE', datetime.date),
-            ('753-04-21 12:00:00 BC', 'PYDATETIME', str),
-            ('2021-03-24 10:43:11', 'PYDATETIME', datetime.date),
+            ('753-04-21 BC', PYDATE, str),
+            ('2021-03-24', PYDATE, datetime.date),
+            ('753-04-21 12:00:00 BC', PYDATETIME, str),
+            ('2021-03-24 10:43:11', PYDATETIME, datetime.date),
 
-            # This values should contain tz but it requires cursor
-            ('753-04-21 13:00:00 BC', 'PYDATETIMETZ', str),
-            ('2021-03-24 13:43:11', 'PYDATETIMETZ', datetime.date),
+            # This values should contain tz but it requires a cursor
+            ('753-04-21 13:00:00 BC', PYDATETIMETZ, str),
+            ('2021-03-24 13:43:11', PYDATETIMETZ, datetime.date),
         ]
 
         adapters = register_adapters()
 
-        for unsafe_value, origin_type, target_type in unsafe_values:
+        for unsafe_value, original_type, target_type in unsafe_values:
             for adapter in adapters:
-                if adapter.new_type.name == origin_type:
-                    value = adapter.cast(unsafe_value, None)
+                if adapter.new_type.name == original_type.name:
+                    value = adapter.new_type(unsafe_value, None)
                     self.assertIsInstance(value, target_type)
+    
+    def test_unsafe_type_adapters_arrays(self):
+        unsafe_values = [
+            (
+                '{753-04-21 BC,2021-03-24}',
+                PYDATEARRAY, (str, datetime.date)
+            ),
+            (
+                '{753-04-21 12:00:00 BC,2021-03-24 10:43:11}',
+                PYDATETIMEARRAY, (str, datetime.datetime)
+            ),
+
+            # This values should contain tz but it requires a cursor
+            (
+                '{753-04-21 13:00:00 BC,2021-03-24 13:43:11}',
+                PYDATETIMETZARRAY, (str, datetime.datetime)
+            ),
+        ]
+
+        adapters = register_adapters()
+
+        for unsafe_value, original_type, target_types in unsafe_values:
+            for adapter in adapters:
+                if adapter.new_array_type.name == original_type.name:
+                    values = adapter.new_array_type(unsafe_value, None)
+                    for value, target_type in zip(values, target_types):
+                        self.assertIsInstance(value, target_type)
 
 
 if __name__ == "__main__":
