@@ -677,51 +677,89 @@ class TestPostgres(unittest.TestCase):
             self.assertIn(adapter.new_array_type, global_types)
 
     def test_unsafe_type_adapters(self):
-        unsafe_values = [
-            ('753-04-21 BC', PYDATE, str),
-            ('2021-03-24', PYDATE, datetime.date),
-            ('753-04-21 12:00:00 BC', PYDATETIME, str),
-            ('2021-03-24 10:43:11', PYDATETIME, datetime.date),
+        test_data = [
+            {
+                'value': '753-04-21 BC',
+                'type': PYDATE,
+                'expected': '753-04-21 BC',
+            },
+            {
+                'value': '2021-03-24',
+                'type': PYDATE,
+                'expected': datetime.date(2021, 3, 24),
+            },
+            {
+                'value': '753-04-21 12:00:00 BC',
+                'type': PYDATETIME,
+                'expected': '753-04-21 12:00:00 BC',
+            },
+            {
+                'value': '2021-03-24 10:43:11',
+                'type': PYDATETIME,
+                'expected': datetime.datetime(2021, 3, 24, 10, 43, 11),
+            },
 
             # This values should contain tz but it requires a cursor
-            ('753-04-21 13:00:00 BC', PYDATETIMETZ, str),
-            ('2021-03-24 13:43:11', PYDATETIMETZ, datetime.date),
+            {
+                'value': '753-04-21 13:00:00 BC',
+                'type': PYDATETIMETZ,
+                'expected': '753-04-21 13:00:00 BC',
+            },
+            {
+                'value': '2021-03-24 13:43:11',
+                'type': PYDATETIMETZ,
+                'expected': datetime.datetime(2021, 3, 24, 13, 43, 11),
+            },
         ]
 
         adapters = register_adapters()
 
-        for unsafe_value, original_type, target_type in unsafe_values:
+        for test in test_data:
             for adapter in adapters:
-                if adapter.new_type.name == original_type.name:
-                    value = adapter.new_type(unsafe_value, None)
-                    self.assertIsInstance(value, target_type)
-    
+                if adapter.new_type.name == test['type'].name:
+                    value = adapter.new_type(test['value'], None)
+                    self.assertIsInstance(value, type(test['expected']))
+                    self.assertEqual(value, test['expected'])
+
     def test_unsafe_type_adapters_arrays(self):
-        unsafe_values = [
-            (
-                '{753-04-21 BC,2021-03-24}',
-                PYDATEARRAY, (str, datetime.date)
-            ),
-            (
-                '{753-04-21 12:00:00 BC,2021-03-24 10:43:11}',
-                PYDATETIMEARRAY, (str, datetime.datetime)
-            ),
+        test_data = [
+            {
+                'value': '{753-04-21 BC,2021-03-24}',
+                'type': PYDATEARRAY,
+                'expected': (
+                    '753-04-21 BC',
+                    datetime.date(2021, 3, 24)
+                )
+            },
+            {
+                'value': '{753-04-21 12:00:00 BC,2021-03-24 10:43:11}',
+                'type': PYDATETIMEARRAY,
+                'expected': (
+                    '753-04-21 12:00:00 BC',
+                    datetime.datetime(2021, 3, 24, 10, 43, 11)
+                )
+            },
 
             # This values should contain tz but it requires a cursor
-            (
-                '{753-04-21 13:00:00 BC,2021-03-24 13:43:11}',
-                PYDATETIMETZARRAY, (str, datetime.datetime)
-            ),
+            {
+                'value': '{753-04-21 13:00:00 BC,2021-03-24 13:43:11}',
+                'type': PYDATETIMETZARRAY,
+                'expected': (
+                    '753-04-21 13:00:00 BC',
+                    datetime.datetime(2021, 3, 24, 13, 43, 11)
+                )
+            }
         ]
 
         adapters = register_adapters()
 
-        for unsafe_value, original_type, target_types in unsafe_values:
+        for test in test_data:
             for adapter in adapters:
-                if adapter.new_array_type.name == original_type.name:
-                    values = adapter.new_array_type(unsafe_value, None)
-                    for value, target_type in zip(values, target_types):
-                        self.assertIsInstance(value, target_type)
+                if adapter.new_array_type.name == test['type'].name:
+                    values = adapter.new_array_type(test['value'], None)
+                    for value, expected in zip(values, test['expected']):
+                        self.assertIsInstance(value, type(expected))
+                        self.assertEqual(value, expected)
 
 
 if __name__ == "__main__":
