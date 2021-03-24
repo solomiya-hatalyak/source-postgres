@@ -60,10 +60,3 @@ class UnsafeTypeAdapter:
             result = self.safe_type(value, cursor)
 
         return result
-
-
-def register_types(scope=None):
-    """Register adapters for unsafe psycopg types."""
-    for unsafe_type, unsafe_array_type in UNSAFE_TYPES:
-        adapter = UnsafeTypeAdapter(unsafe_type, unsafe_array_type)
-        adapter.register(scope)
