@@ -1,7 +1,13 @@
 import unittest
+import datetime
 
 import mock
 import psycopg2
+from psycopg2.extensions import (
+    PYDATE, PYDATEARRAY,
+    PYDATETIME, PYDATETIMEARRAY,
+    PYDATETIMETZ, PYDATETIMETZARRAY,
+)
 from panoply import PanoplyException
 
 from postgresv2.dal.queries.consts import MAX_RETRIES, CONNECT_TIMEOUT
@@ -10,7 +16,8 @@ from postgresv2.dal.key_strategy import choose_index
 from postgresv2.dynamic_params import get_tables
 from postgresv2.exceptions import PostgresValidationError, PostgresInckeyError
 from postgresv2.postgresv2 import Postgres
-from postgresv2.utils import connect, validate_host_and_port
+from postgresv2.utils import connect, validate_host_and_port, register_adapters
+from postgresv2.types import UnsafeTypeAdapter, UNSAFE_TYPES
 
 OPTIONS = {
     "logger": lambda *msgs: None,  # no-op logger
@@ -660,6 +667,99 @@ class TestPostgres(unittest.TestCase):
         for source in invalid_sources:
             with self.assertRaises(PostgresValidationError):
                 validate_host_and_port(source)
+
+    def test_register_adapters(self):
+        adapters = register_adapters()
+        global_types = psycopg2.extensions.string_types.values()
+
+        for adapter in adapters:
+            self.assertIn(adapter.new_type, global_types)
+            self.assertIn(adapter.new_array_type, global_types)
+
+    def test_unsafe_type_adapters(self):
+        test_data = [
+            {
+                'value': '753-04-21 BC',
+                'type': PYDATE,
+                'expected': '753-04-21 BC',
+            },
+            {
+                'value': '2021-03-24',
+                'type': PYDATE,
+                'expected': datetime.date(2021, 3, 24),
+            },
+            {
+                'value': '753-04-21 12:00:00 BC',
+                'type': PYDATETIME,
+                'expected': '753-04-21 12:00:00 BC',
+            },
+            {
+                'value': '2021-03-24 10:43:11',
+                'type': PYDATETIME,
+                'expected': datetime.datetime(2021, 3, 24, 10, 43, 11),
+            },
+
+            # This values should contain tz but it requires a cursor
+            {
+                'value': '753-04-21 13:00:00 BC',
+                'type': PYDATETIMETZ,
+                'expected': '753-04-21 13:00:00 BC',
+            },
+            {
+                'value': '2021-03-24 13:43:11',
+                'type': PYDATETIMETZ,
+                'expected': datetime.datetime(2021, 3, 24, 13, 43, 11),
+            },
+        ]
+
+        adapters = register_adapters()
+
+        for test in test_data:
+            for adapter in adapters:
+                if adapter.new_type.name == test['type'].name:
+                    value = adapter.new_type(test['value'], None)
+                    self.assertIsInstance(value, type(test['expected']))
+                    self.assertEqual(value, test['expected'])
+
+    def test_unsafe_type_adapters_arrays(self):
+        test_data = [
+            {
+                'value': '{753-04-21 BC,2021-03-24}',
+                'type': PYDATEARRAY,
+                'expected': (
+                    '753-04-21 BC',
+                    datetime.date(2021, 3, 24)
+                )
+            },
+            {
+                'value': '{753-04-21 12:00:00 BC,2021-03-24 10:43:11}',
+                'type': PYDATETIMEARRAY,
+                'expected': (
+                    '753-04-21 12:00:00 BC',
+                    datetime.datetime(2021, 3, 24, 10, 43, 11)
+                )
+            },
+
+            # This values should contain tz but it requires a cursor
+            {
+                'value': '{753-04-21 13:00:00 BC,2021-03-24 13:43:11}',
+                'type': PYDATETIMETZARRAY,
+                'expected': (
+                    '753-04-21 13:00:00 BC',
+                    datetime.datetime(2021, 3, 24, 13, 43, 11)
+                )
+            }
+        ]
+
+        adapters = register_adapters()
+
+        for test in test_data:
+            for adapter in adapters:
+                if adapter.new_array_type.name == test['type'].name:
+                    values = adapter.new_array_type(test['value'], None)
+                    for value, expected in zip(values, test['expected']):
+                        self.assertIsInstance(value, type(expected))
+                        self.assertEqual(value, expected)
 
 
 if __name__ == "__main__":

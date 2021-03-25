@@ -7,6 +7,7 @@ from psycopg2.extras import RealDictRow
 
 from .dal.connector import Connector
 from .dal.queries.consts import CONNECT_TIMEOUT
+from .types import UnsafeTypeAdapter, UNSAFE_TYPES
 from .exceptions import PostgresValidationError
 
 
@@ -121,3 +122,16 @@ def validate_address(address: str):
         validate_port(port)
     else:
         validate_hostname(address)
+
+
+def register_adapters(scope: object = None) -> list:
+    """Creates and registers adapters for unsafe psycopg types."""
+    adapters = [
+        UnsafeTypeAdapter(unsafe_type, unsafe_array_type)
+        for unsafe_type, unsafe_array_type in UNSAFE_TYPES
+    ]
+
+    for adapter in adapters:
+        adapter.register(scope=scope)
+
+    return adapters

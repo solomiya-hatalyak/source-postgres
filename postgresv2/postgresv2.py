@@ -84,6 +84,8 @@ class Postgres(panoply.DataSource):
         if self.connector is None or self.connector.cursor is None:
             self.connector = connect(self.source)
 
+            register_adapters(self.connector.cursor)
+
             if self.keys is None:
                 if self.inckey:
                     self.keys = [self.inckey]
