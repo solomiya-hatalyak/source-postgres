@@ -9,6 +9,7 @@ from .dal.key_strategy import choose_index
 from .dal.queries.consts import *
 from .dal.queries.query_builder import get_query
 from .exceptions import PostgresInckeyError, PostgresUndefinedTableError
+from .progressor import background_progress
 from .utils import *
 
 
@@ -146,6 +147,7 @@ class Postgres(panoply.DataSource):
 
         return self.connector.cursor.fetchall()
 
+    @background_progress(message='Waiting for query to execute', waiting_interval=3*60)
     def execute(self, query: str):
         self.log(query, "Loaded: {}".format(self.connector.loaded))
         try:
